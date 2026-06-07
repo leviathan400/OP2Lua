@@ -1,0 +1,38 @@
+// Windows version resource for a mission stub DLL.
+//
+// Every OP2Lua mission is the SAME file (LuaMission.dll), copied and byte-patched per mission:
+// the LevelDesc / MapName char[] exports AND this FileDescription (so the mission name shows in
+// Properties > Details). FileDescription is a PLACEHOLDER (stored UTF-16) the new-mission tools
+// overwrite with the mission name - it must stay byte-for-byte identical to OP2LUA_DESC_PLACEHOLDER
+// in op2lua-newmission/main.cpp, tools/new-mission.ps1, and the VB editor. It is padded long enough
+// to hold any mission name. The numeric/version fields below are fixed and identical for all missions.
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+ FILEFLAGS      0x0L
+ FILEOS         VOS__WINDOWS32
+ FILETYPE       VFT_DLL
+ FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"   // U.S. English, Unicode
+        BEGIN
+            VALUE "CompanyName",      "Outpost Universe"
+            VALUE "FileDescription",  "OP2Lua mission name placeholder - set by the new-mission tool"
+            VALUE "FileVersion",      "1.0.0.0"
+            VALUE "InternalName",     "OP2LuaMission"
+            VALUE "LegalCopyright",   "Copyright (C) Outpost Universe"
+            VALUE "OriginalFilename", "LuaMission.dll"
+            VALUE "ProductName",      "OP2Lua Mission"
+            VALUE "ProductVersion",   "1.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

@@ -1,0 +1,17 @@
+D:\opu\build\stub\LuaMission.dll
+D:\opu\build\OP2LuaEditor.exe.config
+D:\opu\build\OP2LuaEditor.exe
+D:\opu\build\OP2LuaEditor.pdb
+D:\opu\build\OP2LuaEditor.xml
+D:\opu\op2lua\op2lua-editor\OP2LuaEditor\obj\Debug\OP2LuaEditor.vbproj.AssemblyReference.cache
+D:\opu\op2lua\op2lua-editor\OP2LuaEditor\obj\Debug\OP2LuaEditor.fAbout.resources
+D:\opu\op2lua\op2lua-editor\OP2LuaEditor\obj\Debug\OP2LuaEditor.fMain.resources
+D:\opu\op2lua\op2lua-editor\OP2LuaEditor\obj\Debug\OP2LuaEditor.fSettings.resources
+D:\opu\op2lua\op2lua-editor\OP2LuaEditor\obj\Debug\OP2LuaEditor.fMissionProps.resources
+D:\opu\op2lua\op2lua-editor\OP2LuaEditor\obj\Debug\OP2LuaEditor.Resources.resources
+D:\opu\op2lua\op2lua-editor\OP2LuaEditor\obj\Debug\OP2LuaEditor.vbproj.GenerateResource.cache
+D:\opu\op2lua\op2lua-editor\OP2LuaEditor\obj\Debug\OP2LuaEditor.vbproj.CoreCompileInputs.cache
+D:\opu\op2lua\op2lua-editor\OP2LuaEditor\obj\Debug\OP2LuaEd.255A7A95.Up2Date
+D:\opu\op2lua\op2lua-editor\OP2LuaEditor\obj\Debug\OP2LuaEditor.exe
+D:\opu\op2lua\op2lua-editor\OP2LuaEditor\obj\Debug\OP2LuaEditor.xml
+D:\opu\op2lua\op2lua-editor\OP2LuaEditor\obj\Debug\OP2LuaEditor.pdb

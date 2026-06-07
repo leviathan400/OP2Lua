@@ -1,0 +1,433 @@
+﻿<?xml version="1.0"?>
+<doc>
+<assembly>
+<name>
+OP2LuaEditor
+</name>
+</assembly>
+<members>
+<member name="T:OP2LuaEditor.My.Resources.Resources">
+<summary>
+  A strongly-typed resource class, for looking up localized strings, etc.
+</summary>
+</member>
+<member name="P:OP2LuaEditor.My.Resources.Resources.ResourceManager">
+<summary>
+  Returns the cached ResourceManager instance used by this class.
+</summary>
+</member>
+<member name="P:OP2LuaEditor.My.Resources.Resources.Culture">
+<summary>
+  Overrides the current thread's CurrentUICulture property for all
+  resource lookups using this strongly typed resource class.
+</summary>
+</member>
+<member name="P:OP2LuaEditor.My.Resources.Resources.banner02_620x100">
+<summary>
+  Looks up a localized resource of type System.Drawing.Bitmap.
+</summary>
+</member>
+<member name="P:OP2LuaEditor.My.Resources.Resources.dataverse">
+<summary>
+  Looks up a localized resource of type System.Drawing.Icon similar to (Icon).
+</summary>
+</member>
+<member name="P:OP2LuaEditor.My.Resources.Resources.AppIcon">
+<summary>
+  Looks up a localized resource of type System.Drawing.Icon similar to (Icon).
+</summary>
+</member>
+<member name="P:OP2LuaEditor.My.Resources.Resources.gorf">
+<summary>
+  Looks up a localized resource of type System.IO.UnmanagedMemoryStream similar to System.IO.MemoryStream.
+</summary>
+</member>
+<member name="M:OP2LuaEditor.fAbout.ShowAbout(System.String,System.String,System.String,System.Windows.Forms.Form,System.String,System.String,System.String)">
+ <summary>
+ Convenience method to show the About dialog with custom values
+ </summary>
+</member>
+<member name="T:OP2LuaEditor.fMain.RenderMode">
+ <summary>
+ Available map rendering modes
+ </summary>
+</member>
+<member name="T:OP2LuaEditor.fMain.Command">
+ <summary>
+ Abstract Command class that defines the undo/redo interface
+ </summary>
+</member>
+<member name="T:OP2LuaEditor.fMain.ChangeCellTypeCommand">
+ <summary>
+ Command for changing a tile's cell type
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.fMain_Load(System.Object,System.EventArgs)">
+ <summary>
+ Handles form load event
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.ShowLibraries">
+ <summary>
+ Show version numbers of the OP2 libraries
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.InitializeMapResourceManager">
+ <summary>
+ Initializes the OP2UtilityDotNet ResourceManager
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.InitializeUI">
+ <summary>
+ Initializes the user interface elements
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.AddTilesetInfoLabels">
+ <summary>
+ Adds property labels to the tile properties panel
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.ShowSettingsDialog">
+ <summary>
+ Shows the settings dialog to configure application settings
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.OnFormClosing(System.Windows.Forms.FormClosingEventArgs)">
+ <summary>
+ Handles form closing event, performs cleanup
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.ProcessCmdKey(System.Windows.Forms.Message@,System.Windows.Forms.Keys)">
+ <summary>
+ Processes command key presses for handling hotkeys
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.LoadMapFile(System.String)">
+ <summary>
+ Loads a map file from the specified path
+ </summary>
+ <param name="mapFilePath">Path to the map file</param>
+ <returns>True if loading was successful, false otherwise</returns>
+</member>
+<member name="M:OP2LuaEditor.fMain.UpdateMapLabelsOnLoad">
+ <summary>
+ Updates all UI labels with information about the loaded map
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.OpenMap_Click(System.Object,System.EventArgs)">
+ <summary>
+ Handles Open Map menu item click event
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.SaveMap_Click(System.Object,System.EventArgs)">
+ <summary>
+ Handles Save Map menu item click event
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.CloseMap_Click(System.Object,System.EventArgs)">
+ <summary>
+ Handles Close Map menu item click event
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.CleanupMapResources">
+ <summary>
+ Cleans up map resources when closing a map
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.Settings_Click(System.Object,System.EventArgs)">
+ <summary>
+ Handles Settings menu item click event
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.Exit_Click(System.Object,System.EventArgs)">
+ <summary>
+ Handles Exit menu item click event
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.ToggleGrid_Click(System.Object,System.EventArgs)">
+ <summary>
+ Toggles grid display
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.ResetZoom_Click(System.Object,System.EventArgs)">
+ <summary>
+ Resets zoom level to 100%
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.CenterView_Click(System.Object,System.EventArgs)">
+ <summary>
+ Centers the map view in the panel
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderModeGameMap_Click(System.Object,System.EventArgs)">
+ <summary>
+ Sets the render mode to GameMap
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderModeCellTypeOverlay_Click(System.Object,System.EventArgs)">
+ <summary>
+ Sets the render mode to CellTypeOverlay
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderModeCellTypeOverlayAll_Click(System.Object,System.EventArgs)">
+ <summary>
+ Sets the render mode to CellTypeOverlayAll
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderModeCellTypeBasic_Click(System.Object,System.EventArgs)">
+ <summary>
+ Sets the render mode to CellTypeBasic
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderModeCellTypeAll_Click(System.Object,System.EventArgs)">
+ <summary>
+ Sets the render mode to CellTypeAll
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.ExportMapImage(System.Double,System.String)">
+ <summary>
+ Exports the map image WITH the regions + units overlay drawn on it, at the given scale,
+ prompting the user with a Save File dialog (PNG or JPG).
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.About_Click(System.Object,System.EventArgs)">
+ <summary>
+ Handles "About" menu item click
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.GetEncoder(System.Drawing.Imaging.ImageFormat)">
+ <summary>
+ Helper function to get the JPEG encoder
+ </summary>
+ <param name="format">Image format to get encoder for</param>
+ <returns>ImageCodecInfo for the requested format</returns>
+</member>
+<member name="M:OP2LuaEditor.fMain.GenerateMapBitmap">
+ <summary>
+ Generates the map bitmap based on the current render mode
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderGameMap">
+ <summary>
+ Renders map in GameMap mode (actual tileset graphics)
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderCellTypeOverlay">
+ <summary>
+ Renders map in CellTypeOverlay mode (game map with semi-transparent cell type overlay)
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderCellTypeOverlayAll">
+ <summary>
+ Renders map in CellTypeOverlayAll mode (game map with cell type labels)
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderCellTypeBasic">
+ <summary>
+ Renders map in CellTypeBasic mode (simplified cell type coloring)
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderCellTypeAll">
+ <summary>
+ Renders map in CellTypeAll mode (detailed cell type coloring with text)
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.MapPanel_Paint(System.Object,System.Windows.Forms.PaintEventArgs)">
+ <summary>
+ Paints the map panel, drawing the map with appropriate zoom and grid
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.UpdateSingleTile(System.Int32,System.Int32)">
+ <summary>
+ Updates a single tile in the map bitmap
+ </summary>
+ <param name="x">Tile X coordinate</param>
+ <param name="y">Tile Y coordinate</param>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderSingleTileGameMap(System.Drawing.Graphics,System.Int32,System.Int32)">
+ <summary>
+ Renders a single tile in GameMap mode
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderSingleTileCellTypeOverlay(System.Drawing.Graphics,System.Int32,System.Int32)">
+ <summary>
+ Renders a single tile in CellTypeOverlay mode
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderSingleTileCellTypeOverlayAll(System.Drawing.Graphics,System.Int32,System.Int32)">
+ <summary>
+ Renders a single tile in CellTypeOverlayAll mode
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderSingleTileCellTypeBasic(System.Drawing.Graphics,System.Int32,System.Int32)">
+ <summary>
+ Renders a single tile in CellTypeBasic mode
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.RenderSingleTileCellTypeAll(System.Drawing.Graphics,System.Int32,System.Int32)">
+ <summary>
+ Renders a single tile in CellTypeAll mode
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.UpdateMapTile(System.Int32,System.Int32)">
+ <summary>
+ Updates the map tile display in the bitmap
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.MapPanel_MouseMove(System.Object,System.Windows.Forms.MouseEventArgs)">
+ <summary>
+ Handles mouse movement over the map panel
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.ClampOffsets">
+ <summary>
+ Clamps offsetX/offsetY so the user can't pan/zoom the map off-screen.
+ Allows up to ~64 px of gray around the map when the map is larger
+ than the panel; for smaller maps the whole map stays on-screen.
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.MapPanel_MouseDown(System.Object,System.Windows.Forms.MouseEventArgs)">
+ <summary>
+ Handles mouse down event on the map panel
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.MapPanel_MouseUp(System.Object,System.Windows.Forms.MouseEventArgs)">
+ <summary>
+ Handles mouse up event on the map panel
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.MapPanel_MouseWheel(System.Object,System.Windows.Forms.MouseEventArgs)">
+ <summary>
+ Handles mouse wheel event on the map panel for zooming
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.ShowTilesetLoadingStatus">
+ <summary>
+ Shows the tileset loading status message
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.LoadMapTilesets">
+ <summary>
+ Loads tilesets needed for the current map
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.DiagnoseTilesetLoading">
+ <summary>
+ Diagnostic function to check tileset loading paths
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.LoadTilesetFromFile(System.String,System.String)">
+ <summary>
+ Loads a tileset from the specified file
+ </summary>
+ <param name="filePath">Path to the tileset file</param>
+ <param name="tilesetName">Name of the tileset</param>
+</member>
+<member name="M:OP2LuaEditor.fMain.ExtractTilesFromTileset(System.String,OP2UtilityDotNet.Bitmap.BitmapFile)">
+ <summary>
+ Extracts individual tiles from a tileset bitmap
+ </summary>
+ <param name="tilesetName">Name of the tileset</param>
+ <param name="tilesetBitmap">The tileset bitmap data</param>
+</member>
+<member name="M:OP2LuaEditor.fMain.ConvertToBitmap(OP2UtilityDotNet.Bitmap.BitmapFile)">
+ <summary>
+ Converts a BitmapFile to System.Drawing.Bitmap
+ Including correctly handling OP2's BGR format and transparency
+ </summary>
+ <param name="bitmapFile">The bitmap file to convert</param>
+ <returns>A System.Drawing.Bitmap representation of the input</returns>
+</member>
+<member name="M:OP2LuaEditor.fMain.UpdatePropertyControls">
+ <summary>
+ Updates the property panel controls with information about the currently selected tile
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.GetCellTypeLabel(OP2UtilityDotNet.OP2Map.CellType)">
+ <summary>
+ Gets a human-readable label for a cell type
+ </summary>
+ <param name="cellType">The cell type</param>
+ <returns>A tuple with label text and color</returns>
+</member>
+<member name="M:OP2LuaEditor.fMain.GetColorForCellType(OP2UtilityDotNet.OP2Map.CellType)">
+ <summary>
+ Gets a color for a cell type in basic view
+ </summary>
+ <param name="cellType">The cell type</param>
+ <returns>A color representing the cell type</returns>
+</member>
+<member name="M:OP2LuaEditor.fMain.GetDetailedColorForCellType(OP2UtilityDotNet.OP2Map.CellType)">
+ <summary>
+ Gets a detailed color for a cell type
+ </summary>
+ <param name="cellType">The cell type</param>
+ <returns>A color representing the cell type with more detail</returns>
+</member>
+<member name="M:OP2LuaEditor.fMain.GetOverlayColorForCellType(OP2UtilityDotNet.OP2Map.CellType)">
+ <summary>
+ Gets a color for cell type overlay visualization
+ </summary>
+ <param name="cellType">The cell type</param>
+ <returns>A color suitable for overlay display</returns>
+</member>
+<member name="M:OP2LuaEditor.fMain.FindControl(System.String)">
+ <summary>
+ Helper method to find a control by name
+ </summary>
+ <param name="controlName">Name of the control to find</param>
+ <returns>The found control or Nothing</returns>
+</member>
+<member name="M:OP2LuaEditor.fMain.HasCorruptTileGroupNames">
+ <summary>
+ Checks if the map has corrupted tile group names by examining only the first tile group
+ </summary>
+ <returns>True if corruption is detected, False if names appear valid</returns>
+</member>
+<member name="M:OP2LuaEditor.fMain.pnlMap_DragEnter(System.Object,System.Windows.Forms.DragEventArgs)">
+ <summary>
+ Handles drag enter event to allow file dropping onto the map panel
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fMain.pnlMap_DragDrop(System.Object,System.Windows.Forms.DragEventArgs)">
+ <summary>
+ Processes files dropped onto the map panel and attempts to load them
+ </summary>
+</member>
+<member name="T:OP2LuaEditor.fSettings">
+ <summary>
+ Settings form for OP2LuaEditor
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fSettings.fSettings_Load(System.Object,System.EventArgs)">
+ <summary>
+ Handles form load - initializes settings form
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fSettings.btnBrowseWorkingPath_Click(System.Object,System.EventArgs)">
+ <summary>
+ Handles the click event for the Browse Working Path button
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fSettings.btnBrowseOP2Path_Click(System.Object,System.EventArgs)">
+ <summary>
+ Handles the click event for the Browse Outpost 2 Path button
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fSettings.btnBrowseExportPath_Click(System.Object,System.EventArgs)">
+ <summary>
+ Handles the click event for the Browse Export Path button
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fSettings.btnSave_Click(System.Object,System.EventArgs)">
+ <summary>
+ Handles the click event for the Save button
+ </summary>
+</member>
+<member name="M:OP2LuaEditor.fSettings.btnCancel_Click(System.Object,System.EventArgs)">
+ <summary>
+ Handles the click event for the Cancel button
+ </summary>
+</member>
+</members>
+</doc>

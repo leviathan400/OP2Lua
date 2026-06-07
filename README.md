@@ -5,10 +5,10 @@
 OP2Lua lets you build a mission for *Outpost 2* from two plain
 text files instead of a hand-compiled C++ mission DLL:
 
-| File | What it is | Who writes it |
-|---|---|---|
-| `placement.lua` | The **nouns** - players, starting units, resources, beacons, named regions. A generated data table. | the **OP2MissionEditor** (exported from a `.opm`) |
-| `mission.lua` | The **verbs** - what happens during the mission (timers, attack waves, win/lose, reactions). | the mission author, by hand |
+| File | What it is |
+|---|---|
+| `cMyMission.placement.lua` | Players, starting units, resources, beacons, named regions. The starting layout. |
+| `cMyMission.lua` | What happens during the mission (timers, attack waves, win/lose, reactions). |
 
 The author edits Lua and never touches a compiler. (A tiny prebuilt stub DLL ships *with* the
 mission - see the architecture below - but no one compiles it per mission.)
@@ -22,7 +22,7 @@ no capstone, no op2ext module**.
 
 ## Status
 
-**Working in-game (v0.5.2).** A **5-mission demo pack** runs in real Outpost 2 - **Hold the Line**
+**Working in-game (v0.6.0).** A **5-mission demo pack** runs in real Outpost 2 - **Hold the Line**
 (defense), **Strike Team** (offense), **The Convoy** (escort), **Hold the Beacon** (control), and
 **Seek and Destroy** (hunt): placement, escalating waves, scripted/reactive enemies, timed
 reinforcements, cargo trucks, synced RNG, combat orders, messages, Savant voices, the multiplayer
@@ -140,11 +140,3 @@ activity. Errors land in both.
 - **OP2MissionEditor / OP2OpmTools** (the `.opm` format) - OP2Lua consumes a `placement.lua`
   *generated from* a `.opm`. The converter belongs on the editor side (it already transpiles
   `.opm` → C++; emitting Lua + byte-patching the stub's `DescBlock`/strings is the same kind of tool).
-
-## Branding / file properties
-
-The build stamps Windows version resources so the DLLs identify themselves in Explorer:
-`OP2LuaCore.dll` shows the **project version** (currently 0.5.2) and **Outpost Universe**; each mission DLL shows its **name**
-under **OP2Lua Mission** / **Outpost Universe** (no version). Bump the version in one place - the
-`project(OP2Lua VERSION ...)` line in `CMakeLists.txt` (kept in sync with `OP2LUA_VERSION` in
-`src/OP2LuaCore.h`).

@@ -1,6 +1,6 @@
 # OP2Lua
 
-**Write Outpost 2 missions in Lua - no compiler, no DLL authoring.**
+Write Outpost 2 missions in Lua - no compiler, no DLL authoring.
 
 OP2Lua lets you build a mission for *Outpost 2* from two plain
 text files instead of a hand-compiled C++ mission DLL:
@@ -27,15 +27,12 @@ no capstone, no op2ext module**.
 **Seek and Destroy** (hunt): placement, escalating waves, scripted/reactive enemies, timed
 reinforcements, cargo trucks, synced RNG, combat orders, messages, Savant voices, the multiplayer
 "Morale Steady" rule, and clean win/lose. Coordinates match the in-game status bar (type what you
-see); each mission gets its own debug log. Stress-tested to 90+ unbounded waves and ~2000 units with
-**zero runtime crashes**. Phases 0-3 are complete - see [`docs/CHANGES.md`](docs/CHANGES.md) for the full
-feature list and [`docs/ROADMAP.md`](docs/ROADMAP.md) for what's next.
+see); each mission gets its own debug log.
 
-- ✅ **Phase 0** runtime + Lua host
-- ✅ **Phase 1** mission contract (`on_init`/`on_tick`/`on_chat`/`on_*_unit`)
-- ✅ **Phase 2** placement loader (`placement.lua` → players/units/beacons + named handles)
-- ✅ **Phase 3** author API (scheduler, `game.create_unit`/`rand`/`sound`, `Unit`/`Player`/`Region` methods, `mission.win/lose`)
-- ⏭ **Phase 4** (next) - the `.opm` → `placement.lua` + DescBlock-patch converter, so missions show real names in the menu and are authored visually.
+**Download the 5-mission pack:** https://github.com/leviathan400/OP2LuaSDK/releases
+
+See [`docs/CHANGES.md`](docs/CHANGES.md) for the full feature list and
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for what's next.
 
 ---
 
@@ -121,14 +118,14 @@ The 1.4.1 installer unpacks the game's content into an **`OPU`** folder under th
 > `.lua` next to its `.dll`.**
 
 The complete sample missions (and the `feature-test` API-coverage mission) live in the **OP2LuaSDK**
-under [`op2luasdk/samples/`](../op2luasdk/samples/) - kept there as the single source of truth so the
+under [`OP2LuaSDK/samples/`](https://github.com/leviathan400/OP2LuaSDK/tree/main/samples) - kept there as the single source of truth so the
 demos can't drift out of sync. For making missions without this repo, see the **OP2LuaSDK** (prebuilt
 runtime + docs + samples + a `new-mission` scaffolder) - authors never build anything here.
 
 Logs are written to `Outpost2\OPU\logs\` (each session stamped with the OP2Lua version and the
 DLL's build time): a shared **`OP2Lua.log`** (core/engine record across all missions) plus a
 per-mission **`OP2Lua-<MissionDll>.log`** that carries that mission's own `print()` debug and
-activity. Errors land in both.
+activity. Errors logged to both.
 
 ---
 

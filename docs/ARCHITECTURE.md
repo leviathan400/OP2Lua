@@ -25,7 +25,7 @@ We considered three ways to get placement into the runtime:
    for every field, in C++. Two parsing/marshalling paths to maintain.
 2. **Converter emits imperative Lua** (`create_unit{...}` calls) mixed with author logic. Powerful,
    but regenerating placement risks clobbering hand-written logic - a classic generated-code trap.
-3. **Converter emits a Lua *data table*; the runtime applies it.** **Chosen.**
+3. **Converter emits a Lua *data table*; the runtime applies it.** ✅ **Chosen.**
 
 Option 3 wins on every axis we care about:
 

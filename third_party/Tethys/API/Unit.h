@@ -18,6 +18,18 @@
 
 namespace Tethys {
 
+/// Defines initial unit rotations and path-finding directions.
+enum class UnitDirection : int {
+  East = 0,
+  SouthEast,
+  South,
+  SouthWest,
+  West,
+  NorthWest,
+  North,
+  NorthEast,
+};
+
 /// Enum specifying unit type classifications.  Used by AI and UnitBlock-related interfaces.
 enum class UnitClassification : int {
   Attack           = 0x00,  ///< Lynx, Panther, Tiger, Scorpion (excludes ESG, EMP, Stickyfoam)
@@ -44,39 +56,23 @@ enum class UnitClassification : int {
 
 namespace TethysAPI {
 
+using UnitDirection      = Tethys::UnitDirection;
 using UnitClassification = Tethys::UnitClassification;
 
-/// Contains information about a ConVec's or factory's cargo bay contents.
-struct CargoKit {
-  constexpr operator MapID() const { return unitType; }  ///< Allows comparison operators, etc.  Assignment disallowed.
-
-  MapID unitType;
-  MapID cargoOrWeaponType;
-};
-
-/// Contains information about a Cargo Truck's contents.
-struct TruckCargo {
-  constexpr operator CargoType&()       { return cargoType; }  ///< Allows assignment and comparison operators, etc.
-  constexpr operator CargoType()  const { return cargoType; }  ///< Allows assignment and comparison operators, etc.
-
-  CargoType cargoType;
-  int       amount;
-};
-
-
+// =====================================================================================================================
 /// Exported interface wrapping a reference to a MapObject instance.
 class Unit : public OP2Class<Unit> {
 public:
   constexpr Unit()           : id_(0)      { }
   explicit  Unit(int unitID) : id_(unitID) { }
-  Unit& operator=(const Unit& unit) = default;
+  Unit& operator=(const Unit& unit) = default;  // ** TODO is this even needed?  Might actually be counter-productive!
 
   bool operator==(const Unit& unit) const { return id_ == unit.id_; }
 
   ///@{ Allow conversion from MapObject pointers/references.
-  explicit Unit(MapObject* pMapObject) : id_((pMapObject != nullptr) ? pMapObject->index_         : 0) { }
-  explicit Unit(AnyMapObj* pMapObject) : id_((pMapObject != nullptr) ? pMapObject->object_.index_ : 0) { }
-  explicit Unit(MapObject&  mapObject) : id_(mapObject.index_) { }
+  Unit(const MapObject* pMapObject) : id_((pMapObject != nullptr) ? pMapObject->index_         : 0) { }
+  Unit(const AnyMapObj* pMapObject) : id_((pMapObject != nullptr) ? pMapObject->object_.index_ : 0) { }
+  Unit(const MapObject&  mapObject) : id_(mapObject.index_) { }
   ///@}
 
   int  GetID() const        { return id_;      }  ///< Get internal unit ID of this Unit wrapper instance.
@@ -92,16 +88,18 @@ public:
   template <MapID I> const auto* GetMapObject() const { return IsValid() ? MapObjFor<I>::GetInstance(size_t(id_)) : 0; }
   ///@}
 
-  ///@{ Get the internal MapObjectType that this unit is managed by.  (Returns MaxObjectType if !IsValid())
+  ///@{ Get the internal MapObjectType, which defines the type of unit this is an instance of.
         MapEntityType* GetMapObjectType()       { return MapEntityType::GetInstance(GetType()); }
   const MapEntityType* GetMapObjectType() const { return MapEntityType::GetInstance(GetType()); }
   ///@}
+  // ** TODO this + GetType() + GetTypeID() need to be cleaned up somehow
 
   int GetOwner()       const { return IsValid() ? GetMapObject()->ownerNum_            : -1; } ///< Owner player ID.
   int GetCreator()     const { return IsValid() ? GetMapObject()->creatorNum_          : -1; } ///< Creator player ID.
   int GetInstanceNum() const { return IsValid() ? GetMapObject()->unitTypeInstanceNum_ :  0; } ///< Type instance #.
 
   MapID GetType()     const { return IsValid() ? GetMapObject()->GetTypeID() : MapID::None; } ///< Unit type ID.
+  MapID GetTypeID()   const { return IsValid() ? GetMapObject()->GetTypeID() : MapID::None; } ///< Unit type ID.
   bool  IsLive()      const { return IsValid()    && GetMapObject()->IsLive();              } ///< Unit is alive?
   bool  IsBuilding()  const { return IsLive()     && HasFlag(MoFlagBuilding);               } ///< Unit is a structure?
   bool  IsFactory()   const { return IsBuilding() && HasFlag(MoFlagBldFactory);             } ///< Unit is a factory?
@@ -232,10 +230,11 @@ public:
 
   // ---------------------------------------------- Specific to vehicles -----------------------------------------------
 
+  // ** TODO can these be overloads cleaned up using a type-erasure wrapper?
   ///@{ [ConVec]  Gets or sets ConVec cargo.
   CargoKit GetConVecCargo() const {
-    return IsVehicle() ?
-      CargoKit{ MapID(GetMapObject<Vehicle>()->cargo_), MapID(GetMapObject<Vehicle>()->weaponOfCargo_) } : CargoKit{};
+    auto*const p = GetMapObject<Vehicle>();
+    return IsVehicle() ? CargoKit{ MapID(p->cargo_), MapID(p->weaponOfCargo_) } : CargoKit{};
   }
   void SetCargo(MapID cargo, MapID weapon)
     { if (IsVehicle()) { auto*const p = GetMapObject<Vehicle>();  p->weapon_ = cargo;  p->weaponOfCargo_ = weapon; } }
@@ -272,10 +271,9 @@ public:
       ProcessCommandPacket(packet);
     }
   }
-  /// Docks this Unit at a structure.  OP2Lua fix: was the raw GetMapObject()->CmdDock() thunk - the
-  /// same class of bug as DoMove (a direct Cmd* call instead of a command packet); it failed to dock
-  /// (no dock animation) and corrupted state. Issue a CommandType::Dock packet instead - Dock uses
-  /// MoveCommand, with the structure's dock tile as the waypoint (as DoMiningRoute already does).
+  /// Docks this Unit at a structure.  Issued via the command-packet system (CommandType::Dock, which
+  /// uses MoveCommand with the structure's dock tile as the waypoint), not the raw CmdDock thunk - that
+  /// direct call does not dock the unit (same class of bug as DoMove's raw CmdMove call).
   void DoDock(Unit at) {
     const auto d = at.GetDockLocation();
     if (IsLive() && d) {
@@ -298,13 +296,14 @@ public:
   void DoDoze(MapRect area);                                                  ///< [Robo-Dozer]  Bulldoze an area.
   void DoMiningRoute(Unit mine, Unit smelter);                                ///< [Cargo Truck] Mine <-> Smelter route.
   void DoSalvage(MapRect  area, Unit gorf);                                   ///< [Cargo Truck] Salvage rubble.
-  void DoDumpCargo()   { if (IsLive()) { GetMapObject()->CmdDumpCargo(); } }  ///< [Cargo Truck] Dispose of cargo.
+  void DoDumpCargo()   { DoSimpleCommand(CommandType::DumpCargo);          }  ///< [Cargo Truck] Dispose of cargo.
   void DoLoadCargo()   { DoSimpleCommand(CommandType::LoadCargo);          }  ///< [Cargo Truck] Load truck cargo.
   void DoUnloadCargo() { DoSimpleCommand(CommandType::UnloadCargo);        }  ///< [Cargo Truck] Unload truck cargo.
 
   // ---------------------------------------------- Specific to buildings ----------------------------------------------
 
   ///@{ [Factory]  Gets or sets factory cargo in the specified cargo bay.
+  // ** TODO let bay=-1 mean "select first empty bay"?
   CargoKit GetFactoryCargo(int bay) const {
     auto*const pMo = (IsFactory() && (bay >= 0) && (bay < 6)) ? GetMapObject<FactoryBuilding>() : nullptr;
     return (pMo != nullptr) ? CargoKit{ MapID(pMo->cargoBayContents_[bay]), MapID(pMo->cargoBayCargoOrWeapon_[bay]) }
@@ -376,8 +375,18 @@ public:
   void DoProduce(                                                  ///< [Factory] Issue a factory build command.
     MapID itemType, MapID weaponType = MapID::None, uint16 scGroupIndex = -1, bool recycleIfFull = false);
   void DoLaunch(Location target = { }, bool forceEnable = false);  ///< [Spaceport] Launch the rocket on launch pad.
-  void DoTransferCargo(int bay)                                    ///< [Factory, Garage] Move cargo to a bay.
-    { if (IsLive()) { GetMapObject()->CmdTransferCargo(bay); } }
+  /// Moves cargo to a bay.  Issued via the command-packet system (CommandType::TransferCargo),
+  /// not the raw CmdTransferCargo thunk - that direct call corrupts state and crashes the engine
+  /// a tick later (same class of bug as DoMove/DoDumpCargo).  [Factory, Garage]
+  void DoTransferCargo(int bay) {
+    if (IsLive()) {
+      CommandPacket packet = { CommandType::TransferCargo, sizeof(TransferCargoCommand) };
+      packet.data.transferCargo.unitID  = id_;
+      packet.data.transferCargo.bay     = bay;
+      packet.data.transferCargo.unknown = 0;
+      ProcessCommandPacket(packet);
+    }
+  }
   void DoResearch(int techID, int numScientists);                  ///< [Lab] Begin researching a technology.
   void DoTrainScientists(int numToTrain);                          ///< [University] Begin training new scientists.
 
@@ -398,6 +407,7 @@ public:
 };
 
 
+// =====================================================================================================================
 /// Info passed to OnCreateUnit() user callback.  (1.4.0)
 struct OnCreateUnitArgs {
   size_t structSize;  ///< Size of this structure.
@@ -416,6 +426,7 @@ struct OnDamageUnitArgs {
   Unit   sourceUnit;  ///< Attacking unit.
   Unit   targetUnit;  ///< Target unit.
   int    damage;      ///< Amount of damage (or EMP time) applied.
+  // ** TODO add empDuration, stickyDuration, esgDuration?
 };
 
 /// Info passed to OnTransferUnit() user callback.  (1.4.2)
@@ -635,10 +646,6 @@ inline void Unit::DoMiningRoute(
 {
   if (IsLive() && mine.IsLive() && smelter.IsLive()) {
     CommandPacket packet = { CommandType::CargoRoute, sizeof(CargoRouteCommand) };
-    // OP2Lua fix: upstream set numUnits = id_ (the count should be 1, not the unit's id) and wrote
-    // the id to unitID[1] (out of bounds - the array is size 1 - leaving unitID[0] uninitialized).
-    // The malformed unit list made OP2 drop the route, so cargo trucks never moved. Mirror the other
-    // command builders (DoMove / DoStandGround): one unit, in slot 0.
     packet.data.cargoRoute.numUnits  = 1;
     packet.data.cargoRoute.unitID[0] = id_;
 

@@ -1,7 +1,7 @@
 # OP2Lua Mission API
 
 The surface a mission author works with in `mission.lua`. Small, shaped like the game, and
-multiplayer-safe by construction (see the note at the bottom). Implemented as of v0.6.0.
+multiplayer-safe by construction (see the note at the bottom). Implemented as of v0.6.12.
 
 ## Coordinates (type what you see in-game)
 
@@ -44,7 +44,8 @@ end
 |---|---|
 | `on_init() -> bool` | Once at mission start. Return `false` to abort. |
 | `on_tick()` | Every game tick. Prefer the scheduler below. |
-| `on_create_unit(unit)` / `on_destroy_unit(unit)` / `on_damage_unit(unit)` | Unit events. |
+| `on_create_unit(unit)` / `on_destroy_unit(unit)` | Unit created / destroyed. Delivered by OPU mod **1.4.0+**. |
+| `on_damage_unit(target, source, damage)` | A unit took damage. Delivered by OPU mod **1.4.2+** only - on older loaders (1.4.0/1.4.1) it never fires. |
 | `on_chat(chat)` | A chat message (`chat.text` read/write, `chat.player`). |
 
 A bug in any callback is caught, logged with a file:line, and surfaced - it never crashes the game.
@@ -78,7 +79,7 @@ Prefer `at_mark` / `marks(n)` over the legacy `game.seconds` / `game.minutes`.
 | Call | Effect |
 |---|---|
 | `game.create_unit{ type=, player=, at=, count=, weapon=, direction=, lights= }` | Create units; returns a list of `Unit`. `at` accepts a `Region`, a `Unit`, or `{x,y}`. `player` accepts a `Player` or a 1-based number. Multiple units are spread over tiles automatically. |
-| `game.message(text [, sound])` | In-game message. `sound` is a name (`"EnemyUnitSighted"`) or raw id; omit for the default. |
+| `game.message(text [, sound])` | In-game message (comms panel). `sound` is a name (`"EnemyUnitSighted"`) or raw id; omit for the default. **Keep `text` short - OP2's comms panel truncates around ~90 chars; put full detail in the log via `print()` instead.** |
 | `game.sound(name_or_id [, toPlayer])` | Play a game sound (e.g. `game.sound("WeAreUnderAttack")`). |
 | `game.rand(n)` | Synchronized random integer in `0..n-1`. **The only randomness available.** |
 | `game.morale_steady([level])` | Lock all players' morale at `level` (default `"Good"`; one of Excellent/Good/Fair/Poor/Terrible) - the multiplayer "Morale Steady" rule, so the colony doesn't fluctuate. |
@@ -125,6 +126,8 @@ as a raw integer SoundID.
 | `game.create_tornado(from, to, duration [, now])` | Vortex along a path. |
 | `game.create_blight(at [, spreadSpeed])` / `game.unset_blight(at)` | Add / remove the Blight. |
 | `game.set_lava_speed(n)` / `game.set_blight_speed(n)` | Spread speeds. |
+| `game.set_lava_possible(area [, on])` | Mark tiles as lava-passable so an eruption's flow can reach them (carve a channel). `on` defaults to true. |
+| `game.disasters_enabled()` | Whether disasters are enabled for this game. Returns **false** in Colony Games (no disasters toggle there - only Difficulty), so a colony mission that wants disasters must call them directly / force its director. Reflects the host's real choice in multiplayer/skirmish. |
 | `game.set_daylight_everywhere(on)` / `game.set_daylight_moves(on)` | Full daylight / day-night cycle. |
 
 ## mission.*
@@ -221,6 +224,9 @@ as a raw integer SoundID.
 **Cargo types:** `Food`, `CommonOre`, `RareOre`, `CommonMetal`, `RareMetal`, `CommonRubble`,
 `RareRubble`, `Spacecraft`, `Wreckage`, `GeneBank`, `Empty` (aliases: `Ore`, `Metal`, `Rubble`).
 Cargo can also be set in placement: `{ type="CargoTruck", ..., cargo="RareMetal", amount=1000 }`.
+A ConVec's structure kit is set in placement with `kit`:
+`{ type="ConVec", ..., kit="Agridome" }` (optional `kit_topping` for a kit's payload, e.g. a Guard
+Post kit's weapon).
 
 ## Player
 
@@ -239,10 +245,15 @@ Cargo can also be set in placement: `{ type="CargoTruck", ..., cargo="RareMetal"
 | `player.ore` / `player.rare_ore` / `player.food` | Stored resources (get or set). |
 | `player.kids` / `player.workers` / `player.scientists` | Population by type (get or set). |
 | `player.population` | Total colonists (read-only). |
+| `player.difficulty` | The Colony Games menu difficulty as `"Easy"`/`"Normal"`/`"Hard"` (read-only). Read it off the human player to self-tune a mission per difficulty. |
+| `player:satellite_count(type)` | How many of a satellite or launched Spaceport cargo rocket the player has - e.g. `"EDWARDSatellite"`, `"RareMetalsCargo"`, `"CommonMetalsCargo"`, `"FoodCargo"`, `"EvacuationModule"`. Drives Starship-colony evacuation victories. |
 
 ```lua
 players[2].ore = players[2].ore + 5000        -- grant the AI a stockpile
 if players[1].workers < 10 then ... end        -- read a resource
+
+local diff = players[1].difficulty             -- "Easy" / "Normal" / "Hard"
+if diff == "Hard" then players[2].ore = 6000 end
 ```
 
 **Technology, alliances, faction**
@@ -318,17 +329,42 @@ A few things are about Outpost 2 itself, not OP2Lua - worth knowing:
   treated as enemies even though they exist.
 - **Command units the tick after creation, not the same tick.** Handled automatically - `move`/
   `attack_move` are deferred one tick - so you can write the obvious thing.
+- **One command per unit per tick.** A unit keeps only the *last* command issued in a given tick. So
+  `u:move(a); u:move(b)` in one tick only does `b`. (Producing one unit at *each of several* factories
+  in the same tick is fine - different units.)
+- **A factory has no build queue.** A `produce()` issued while the factory is still building the
+  previous unit is **dropped** (not queued). Spacing onto a different *tick* isn't enough - you must
+  space produce calls by **≥ the unit's build time** (~12-15 marks for a vehicle). Use a counter loop,
+  one unit per `every(marks(15))` cycle until you've made the target count.
+- **`attack_move` to an empty tile sieges the ground.** For waypoint travel where there may be no enemy
+  at the destination, use `move` - otherwise the unit attacks the bare tile on arrival. Use
+  `attack_move` only when you want it to engage whatever it meets en route.
 
 ## Logs
 
-Two files in `Outpost2\OPU\logs\`:
+Up to three files in `Outpost2\OPU\logs\`, each line stamped with the wall-clock time AND the game
+mark (e.g. `02:45:05 m260 [INFO] ...`). Nothing is duplicated between them:
 
-- **`OP2Lua-<MissionDll>.log`** - *your* mission's log. Your `print(...)` debug, the messages and
-  units it spawns, plus the core context for that run. This is where you look while building a mission.
-- **`OP2Lua.log`** - the shared master log: core/engine lifecycle and any errors, across every
-  mission you play. Your `print()` output is **not** here, so it stays a clean engine record.
+- **`OP2Lua-<MissionDll>.log`** - *your* mission's log: your `print(...)` / `log.mission(...)` debug,
+  `game.message` calls, mission errors, and the FULL crash dump. Where you look while building a mission.
+- **`OP2Lua-<MissionDll>-AI.log`** - a scripted AI's debug stream, written by **`log.ai(...)`**. Lets
+  you monitor/debug just the AI in isolation. Created lazily, so a mission that never calls `log.ai`
+  makes no AI file.
+- **`OP2Lua.log`** - the shared Main log: framework lifecycle (mission load/end, version, map) and a
+  one-line crash summary, across every mission. Mission/AI output is **not** here, so it stays a clean
+  framework record.
 
-Errors (script errors, crashes) appear in **both**, so a failure is never hidden.
+| Logging call | Goes to |
+|---|---|
+| `print(...)` / `log.mission(...)` | the Mission log |
+| `log.ai(...)` | the AI log (+ comms panel if `log.show_ai_in_game(true)`) |
+| `log.show_ai_in_game(on)` | toggle echoing `log.ai` lines to the in-game comms panel (off by default) |
+| `log.ai_status(player)` | (over)writes `OP2Lua-<dll>-AI-status.json` with that player's current resources + unit counts. Call from `every(marks(1), ...)` for a live feed an external tool can poll. |
+
+A crash writes a one-line summary to the Main log and the full register/stack dump to the Mission log,
+so a failure is never hidden but the noise stays in one place.
+
+See **[`LOGGING.md`](LOGGING.md)** for the full logging/debug standard every mission should follow.
 
 ## Multiplayer safety (read once, then forget)
 

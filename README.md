@@ -22,14 +22,17 @@ no capstone, no op2ext module**.
 
 ## Status
 
-**Working in-game (v0.6.0).** A **5-mission demo pack** runs in real Outpost 2 - **Hold the Line**
-(defense), **Strike Team** (offense), **The Convoy** (escort), **Hold the Beacon** (control), and
-**Seek and Destroy** (hunt): placement, escalating waves, scripted/reactive enemies, timed
-reinforcements, cargo trucks, synced RNG, combat orders, messages, Savant voices, the multiplayer
-"Morale Steady" rule, and clean win/lose. Coordinates match the in-game status bar (type what you
-see); each mission gets its own debug log.
+**Working in-game (v0.6.12).** A demo pack runs in real Outpost 2 - **Hold the Line** (defense),
+**Strike Team** (offense), **The Convoy** (escort), **Hold the Beacon** (control), and **Seek and
+Destroy** (hunt): placement, escalating waves, scripted/reactive enemies, timed reinforcements, cargo
+trucks, synced RNG, combat orders, messages, Savant voices, the multiplayer "Morale Steady" rule, and
+clean win/lose. The 0.6 series adds a deeper surface - terrain/perception queries, base-building &
+economy orders (survey/mine/build/dock/produce/research), disasters, and a scripted-AI sandbox - all
+exercised by two full-API smoke tests (**Feature Test** + **Lua Smoke Test**) that tally pass/fail to
+the log and on-screen. Coordinates match the in-game status bar (type what you see); each mission gets
+its own debug log.
 
-**Download the 5-mission pack:** https://github.com/leviathan400/OP2LuaSDK/releases
+**Download the SDK + sample pack:** https://github.com/leviathan400/OP2LuaSDK/releases
 
 See [`docs/CHANGES.md`](docs/CHANGES.md) for the full feature list and
 [`docs/ROADMAP.md`](docs/ROADMAP.md) for what's next.
@@ -117,7 +120,7 @@ The 1.4.1 installer unpacks the game's content into an **`OPU`** folder under th
 > files sit with the other mission DLLs. The rule is constant: **runtime with the game, a mission's
 > `.lua` next to its `.dll`.**
 
-The complete sample missions (and the `feature-test` API-coverage mission) live in the **OP2LuaSDK**
+The complete sample missions (and the `feature-test` + `smoke-test` API-coverage missions) live in the **OP2LuaSDK**
 under [`OP2LuaSDK/samples/`](https://github.com/leviathan400/OP2LuaSDK/tree/main/samples) - kept there as the single source of truth so the
 demos can't drift out of sync. For making missions without this repo, see the **OP2LuaSDK** (prebuilt
 runtime + docs + samples + a `new-mission` scaffolder) - authors never build anything here.
@@ -137,3 +140,15 @@ activity. Errors logged to both.
 - **OP2MissionEditor / OP2OpmTools** (the `.opm` format) - OP2Lua consumes a `placement.lua`
   *generated from* a `.opm`. The converter belongs on the editor side (it already transpiles
   `.opm` → C++; emitting Lua + byte-patching the stub's `DescBlock`/strings is the same kind of tool).
+
+---
+
+## License
+
+OP2Lua is released under the [MIT License](LICENSE) - Copyright (c) 2026 Leviathan.
+
+Vendored libraries under `third_party/` keep their own licenses: **Tethys** (BSD 3-Clause,
+`third_party/Tethys/LICENSE`), **Lua 5.4.7** (MIT, notice at the end of `third_party/lua/lua.h`)
+and **sol2** (MIT, `third_party/sol2/LICENSE.txt`).
+
+Outpost 2 is (c) 1997 Activision Publishing, Inc. This project is not made or supported by Activision.

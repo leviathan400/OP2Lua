@@ -7,8 +7,11 @@
  ***********************************************************************************************************************
  */
 
+// ** TODO many Triggers are busted if playerId != AllPlayers?
+
 #pragma once
 
+#include "Tethys/Common/Util.h"
 #include "Tethys/Game/MapObjectType.h"
 #include "Tethys/API/ScGroup.h"
 #include "Tethys/API/Unit.h"
@@ -55,7 +58,7 @@ public:
         TriggerImpl* GetImpl()       { return IsValid() ? TriggerImpl::GetInstance(id_) : nullptr; }
   const TriggerImpl* GetImpl() const { return IsValid() ? TriggerImpl::GetInstance(id_) : nullptr; }
 
-  ibool HasFired(int playerNum) { return Thunk<0x478CC0, &$::HasFired>(playerNum); }  ///< @note Do not use AllPlayers.
+  ibool HasFired(int playerNum) { return Thunk<0x478CC0, &$::HasFired>(playerNum); }  ///< @note  Do not use AllPlayers!
 };
 
 // =====================================================================================================================
@@ -249,6 +252,7 @@ inline Unit GetSpecialTargetData(const Trigger& specialTargetTrigger)
 
 // =====================================================================================================================
 /// Creates a trigger that fires when the given ScGroup is under attack.
+// ** TODO maybe broken? Check Lesson3.py
 inline Trigger CreateAttackedTrigger(
   const ScGroup& group, std::string_view triggerFunction = "", bool oneShot = true, bool enabled = true)
 {
@@ -280,6 +284,7 @@ inline Trigger CreatePointTrigger(
 
 // =====================================================================================================================
 /// Creates a trigger that fires when any unit enters the area rect.
+// ** TODO maybe broken?
 inline Trigger CreateRectTrigger(
   MapRect area,
   std::string_view triggerFunction = "", int playerNum = AllPlayers, bool oneShot = false, bool enabled = true)

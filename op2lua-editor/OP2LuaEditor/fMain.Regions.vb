@@ -40,6 +40,7 @@ Partial Public Class fMain
     Private missionMenuTop As ToolStripMenuItem = Nothing    ' top-level "Mission" menu (always enabled)
     Private mnuMissionProps As ToolStripMenuItem = Nothing   ' "Properties..." (enabled once a mission is open)
     Private mnuSaveMission As ToolStripMenuItem = Nothing     ' "Save Mission" (enabled once a map is loaded)
+    Private mnuTestInOp2 As ToolStripMenuItem = Nothing       ' "Test in OP2" (enabled once a mission is open)
 
     ' ---- unit editing state ----
     Private unitMode As Boolean = False
@@ -113,6 +114,11 @@ Partial Public Class fMain
         mnuMissionProps.Enabled = False      ' enabled once a mission (placement.lua) is open
         AddHandler mnuMissionProps.Click, AddressOf MissionProps_Click
         missionMenu.DropDownItems.Add(mnuMissionProps)
+        missionMenu.DropDownItems.Add(New ToolStripSeparator())
+        mnuTestInOp2 = New ToolStripMenuItem("Test in OP2")
+        mnuTestInOp2.Enabled = False         ' enabled once a mission (placement.lua) is open
+        AddHandler mnuTestInOp2.Click, AddressOf TestInOp2_Click
+        missionMenu.DropDownItems.Add(mnuTestInOp2)
         If MainMenuStrip IsNot Nothing Then
             Dim insertAtM As Integer = Math.Max(0, MainMenuStrip.Items.Count - 1)   ' before Help
             MainMenuStrip.Items.Insert(insertAtM, missionMenu)
@@ -868,6 +874,7 @@ Partial Public Class fMain
         currentMissionScript = If(scriptFile IsNot Nothing AndAlso File.Exists(scriptFile), scriptFile, Nothing)
         lastLoadedMapName = mapName
         If mnuMissionProps IsNot Nothing Then mnuMissionProps.Enabled = True
+        If mnuTestInOp2 IsNot Nothing Then mnuTestInOp2.Enabled = True
 
         regionList = ParseRegions(placementText)
         unitList = ParseUnits(placementText)
@@ -881,6 +888,93 @@ Partial Public Class fMain
 
         Dim panel As Control = FindControl("pnlMap") : If panel IsNot Nothing Then panel.Invalidate()
         Return True
+    End Function
+
+    ' ===== Test in OP2 (boot OP2 straight into the open mission's DLL via op2launcher.exe) =====
+    Private Sub TestInOp2_Click(sender As Object, e As EventArgs)
+        If String.IsNullOrEmpty(currentPlacementFile) Then
+            MessageBox.Show("Open a mission first (Mission -> Open Mission, or New Mission).",
+                            "Test in OP2", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+
+        ' Derive the sibling mission DLL from the placement file (same base-name convention as the rest
+        ' of the editor). op2launcher boots a DLL by name, so the 'c' colony-menu prefix is optional -
+        ' prefer cBase.dll if present, otherwise Base.dll.
+        Dim baseName As String = Path.GetFileName(currentPlacementFile)
+        If baseName.ToLowerInvariant().EndsWith(".placement.lua") Then baseName = baseName.Substring(0, baseName.Length - ".placement.lua".Length)
+        Dim dir As String = Path.GetDirectoryName(currentPlacementFile)
+        Dim dllName As String = "c" & baseName & ".dll"
+        If Not File.Exists(Path.Combine(dir, dllName)) Then dllName = baseName & ".dll"
+        If Not File.Exists(Path.Combine(dir, dllName)) Then
+            MessageBox.Show("No mission DLL found beside the placement file (looked for c" & baseName & ".dll and " & baseName & ".dll)." & vbCrLf & vbCrLf &
+                            "Create the mission via New Mission so its DLL exists, or place it in OPU\maps\LUA.",
+                            "Test in OP2", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return
+        End If
+
+        ' op2launcher resolves the DLL by name from OP2's mission search path (OPU\maps\LUA). The mission
+        ' must be deployed there for the game to find it.
+        LaunchMissionDll(dllName)
+    End Sub
+
+    ''' <summary>
+    ''' Launches Outpost 2 straight into a mission DLL via op2launcher.exe in
+    ''' the OPU folder. op2launcher arms the in-game Launcher add-on (one-shot)
+    ''' and boots the game directly into the given DLL - no menus. Used for
+    ''' "Test in OP2": run a map through an editor mission DLL.
+    '''
+    ''' missionDll is the DLL name as it lives in the OPU folder (e.g.
+    ''' "cEditorMission.dll"), not a full path. Returns True if the launch was
+    ''' started; failure cases show the user a MessageBox.
+    ''' </summary>
+    Public Function LaunchMissionDll(missionDll As String) As Boolean
+        If String.IsNullOrWhiteSpace(missionDll) Then
+            MessageBox.Show("No mission DLL was specified.",
+                            "Launch Mission",
+                            MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return False
+        End If
+
+        ' Verify the configured OP2 directory exists.
+        If String.IsNullOrEmpty(My.Settings.OP2Path) OrElse
+           Not Directory.Exists(My.Settings.OP2Path) Then
+            MessageBox.Show(
+                "Outpost 2 game directory is not set or doesn't exist." & vbCrLf & vbCrLf &
+                "Configure it in File -> Settings.",
+                "Launch Mission",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return False
+        End If
+
+        Dim opuFolder As String = Path.Combine(My.Settings.OP2Path, "OPU")
+        Dim launcherPath As String = Path.Combine(opuFolder, "op2launcher.exe")
+
+        If Not File.Exists(launcherPath) Then
+            MessageBox.Show(
+                "op2launcher.exe was not found at:" & vbCrLf & launcherPath & vbCrLf & vbCrLf &
+                "Copy op2launcher.exe and Launcher.dll into the OPU folder (next to OPULauncher.exe).",
+                "Launch Mission",
+                MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return False
+        End If
+
+        Try
+            ' op2launcher must run from the OPU folder - it resolves the mission
+            ' DLL and outpost2.ini relative to its own location.
+            Dim startInfo As New ProcessStartInfo() With {
+                .FileName = launcherPath,
+                .Arguments = """" & missionDll & """",
+                .WorkingDirectory = opuFolder
+            }
+            Process.Start(startInfo)
+            Return True
+        Catch ex As Exception
+            MessageBox.Show($"Failed to launch mission: {ex.Message}",
+                            "Launch Mission",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return False
+        End Try
     End Function
 
     ' ===== New Mission (scaffold a fresh mission: clone+patch the bundled stub, write starter lua) =====

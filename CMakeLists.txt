@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(OP2Lua VERSION 0.6.0 LANGUAGES CXX C)
+project(OP2Lua VERSION 0.6.12 LANGUAGES CXX C)
 # NOTE: keep this VERSION in sync with OP2LUA_VERSION in src/OP2LuaCore.h.
 
 # ---------------------------------------------------------------------------

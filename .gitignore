@@ -1,0 +1,14 @@
+# Private notes - kept in SVN only, not published
+docs/AI-DESIGN.md
+docs/CHANGES.md
+docs/DEPLOY.md
+docs/IDEAS.md
+docs/ROADMAP.md
+docs/TETHYS-*.md
+
+# Build output / scratch
+_work/
+build/
+op2lua-editor/OP2LuaEditor/bin/
+op2lua-editor/OP2LuaEditor/obj/
+.vs/

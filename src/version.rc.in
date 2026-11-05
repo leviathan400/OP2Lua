@@ -1,0 +1,35 @@
+// Windows version resource for OP2LuaCore.dll (configured by CMake from the project version).
+// Shows up under the file's Properties > Details (File version, Product version, Copyright, ...).
+#include <winver.h>
+
+#define OP2LUA_VER_FILE @OP2LUA_VER_MAJOR@,@OP2LUA_VER_MINOR@,@OP2LUA_VER_PATCH@,0
+#define OP2LUA_VER_TEXT "@OP2LUA_VER_STR@"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    OP2LUA_VER_FILE
+ PRODUCTVERSION OP2LUA_VER_FILE
+ FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+ FILEFLAGS      0x0L
+ FILEOS         VOS__WINDOWS32
+ FILETYPE       VFT_DLL
+ FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"   // U.S. English, Unicode
+        BEGIN
+            VALUE "CompanyName",      "Outpost Universe"
+            VALUE "FileDescription",  "OP2Lua Runtime"
+            VALUE "FileVersion",      OP2LUA_VER_TEXT
+            VALUE "InternalName",     "OP2LuaCore"
+            VALUE "LegalCopyright",   "Copyright (C) Outpost Universe"
+            VALUE "OriginalFilename", "OP2LuaCore.dll"
+            VALUE "ProductName",      "OP2Lua"
+            VALUE "ProductVersion",   OP2LUA_VER_TEXT
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200   // 0x0409 = U.S. English, 1200 = Unicode
+    END
+END

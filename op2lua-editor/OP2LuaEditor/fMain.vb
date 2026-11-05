@@ -710,6 +710,7 @@ Public Class fMain
             If unitsMenuTop IsNot Nothing Then unitsMenuTop.Enabled = False
             If mnuMissionProps IsNot Nothing Then mnuMissionProps.Enabled = False
             If mnuSaveMission IsNot Nothing Then mnuSaveMission.Enabled = False
+            If mnuTestInOp2 IsNot Nothing Then mnuTestInOp2.Enabled = False
             ClearMissionData()                       ' clear the placed regions + units (and their lists)
             currentPlacementFile = Nothing
             currentMissionScript = Nothing

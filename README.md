@@ -145,10 +145,11 @@ activity. Errors logged to both.
 
 ## License
 
-OP2Lua is released under the [MIT License](LICENSE) - Copyright (c) 2026 Leviathan.
+OP2Lua is released under the [MIT License](LICENSE) - Copyright © 2026 Leviathan.
 
 Vendored libraries under `third_party/` keep their own licenses: **Tethys** (BSD 3-Clause,
 `third_party/Tethys/LICENSE`), **Lua 5.4.7** (MIT, notice at the end of `third_party/lua/lua.h`)
 and **sol2** (MIT, `third_party/sol2/LICENSE.txt`).
 
-Outpost 2 is (c) 1997 Activision Publishing, Inc. This project is not made or supported by Activision.
+*Outpost 2: Divided Destiny* © 1997 Dynamix / Sierra On-Line (rights now held by Activision).
+This project is not made or supported by Dynamix, Sierra or Activision.

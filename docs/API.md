@@ -1,7 +1,7 @@
 # OP2Lua Mission API
 
 The surface a mission author works with in `mission.lua`. Small, shaped like the game, and
-multiplayer-safe by construction (see the note at the bottom). Implemented as of v0.6.12.
+multiplayer-safe by construction (see the note at the bottom). Implemented as of v0.7.0.
 
 ## Coordinates (type what you see in-game)
 

@@ -78,13 +78,15 @@ Prefer `at_mark` / `marks(n)` over the legacy `game.seconds` / `game.minutes`.
 
 | Call | Effect |
 |---|---|
-| `game.create_unit{ type=, player=, at=, count=, weapon=, direction=, lights= }` | Create units; returns a list of `Unit`. `at` accepts a `Region`, a `Unit`, or `{x,y}`. `player` accepts a `Player` or a 1-based number. Multiple units are spread over tiles automatically. |
+| `game.create_unit{ type=, player=, at=, count=, weapon=, direction=, lights= }` | Create units; returns a list of `Unit`. `at` accepts a `Region`, a `Unit`, or `{x,y}`. `player` accepts a `Player` or a 1-based number. Multiple units are spread over tiles automatically; `exact = true` places them on `at` itself, as a mission's setup places its bases (structures beside tubes). |
 | `game.message(text [, sound])` | In-game message (comms panel). `sound` is a name (`"EnemyUnitSighted"`) or raw id; omit for the default. **Keep `text` short - OP2's comms panel truncates around ~90 chars; put full detail in the log via `print()` instead.** |
 | `game.sound(name_or_id [, toPlayer])` | Play a game sound (e.g. `game.sound("WeAreUnderAttack")`). |
 | `game.rand(n)` | Synchronized random integer in `0..n-1`. **The only randomness available.** |
 | `game.morale_steady([level])` | Lock all players' morale at `level` (default `"Good"`; one of Excellent/Good/Fair/Poor/Terrible) - the multiplayer "Morale Steady" rule, so the colony doesn't fluctuate. |
 | `game.free_morale([player])` | Release the morale lock (all players, or one). |
 | `game.num_players()` / `game.num_humans()` | Player counts (human + AI / human only). |
+| `game.initial_units()` | The multiplayer lobby's Initial Vehicles (0-12). |
+| `game.uses_day_night()` / `game.uses_morale()` | The lobby's Day and Night, and whether morale is free (`false` when Morale Steady is ticked). |
 | `game.beacons([ore])` | Discover the map's mining beacons (a list of `Unit`); optional `"Common"`/`"Rare"`. Rank by distance with `unit.x`/`unit.y`. |
 | `game.map_sound(name_or_id, at)` | Play a sound at a map location. |
 
@@ -114,6 +116,7 @@ as a raw integer SoundID.
 | `game.create_wall(type, area)` / `game.create_tube(area)` | Build walls (`"Wall"`/`"LavaWall"`/`"MicrobeWall"`) or tubes over a tile/rect/region. |
 | `game.create_marker(at [, type])` | A map decal (`"Circle"` default, `"DNA"`, `"Beaker"`); returns a `Unit`. |
 | `game.create_wreckage(at, techId [, discovered])` | Wreckage that grants a tech when returned to a Spaceport (techId 8000-12095). |
+| `game.create_beacon{ at=, type=, ore=, yield=, variant= }` | A mining beacon (or `"MagmaVent"` / `"Fumarole"`) made at runtime, with placement's names (`ore` Common/Rare/Random, `yield` Bar3/Bar2/Bar1/Random, `variant` High/Mid/Low/Random). For beacons a mission decides when it starts, e.g. a yield rolled with `game.rand`; fixed ones belong in placement. |
 
 **Disasters & environment** (each `create_*` returns the disaster `Unit`; a trailing `true` triggers it immediately rather than after a warning)
 
@@ -129,6 +132,7 @@ as a raw integer SoundID.
 | `game.set_lava_possible(area [, on])` | Mark tiles as lava-passable so an eruption's flow can reach them (carve a channel). `on` defaults to true. |
 | `game.disasters_enabled()` | Whether disasters are enabled for this game. Returns **false** in Colony Games (no disasters toggle there - only Difficulty), so a colony mission that wants disasters must call them directly / force its director. Reflects the host's real choice in multiplayer/skirmish. |
 | `game.set_daylight_everywhere(on)` / `game.set_daylight_moves(on)` | Full daylight / day-night cycle. |
+| `game.set_initial_light_level(position)` | Where the day/night band starts, as the stock missions set it (e.g. `-32`); with `set_daylight_moves(false)` it stays there. |
 
 ## mission.*
 
@@ -136,8 +140,47 @@ as a raw integer SoundID.
 |---|---|
 | `mission.win()` | End as a victory. |
 | `mission.lose()` | End as a defeat. |
+| `mission.last_one_standing([text])` | The multiplayer Last One Standing victory (the game's own one-player-left trigger), with `text` as the objective (default `"Eliminate your opponents."`). The game decides it per player. |
+| `mission.victory(trigger, text[, {one_shot=false, enabled=true}])` | A victory condition: a player wins once `trigger` fires for them. `text` is the objective in the game's Mission Objectives list. Returns the condition (a `Trigger`, so it can be made off and `:enable()`d later). |
+| `mission.failure(trigger[, {enabled=true}])` | A failure condition: a player loses once `trigger` fires for them. |
 
-> Currently mission-level (the player argument isn't applied yet) - fine for single-player.
+> `win`/`lose` are mission-level (the player argument isn't applied yet) - fine for single-player. A
+> multiplayer mission uses `last_one_standing` or `victory` instead.
+
+## trigger.*
+
+The game's own triggers, as the stock missions make them. The game checks them every 4 ticks on
+every machine alike, and judges each player on their own, so they are the multiplayer-safe way to
+say "a player has done X". Each takes a table of its fields plus, all optional: `on` (a function
+called with the Trigger when it fires), `one_shot` (fire once, or every time the condition holds) and
+`enabled` (`false` makes it off until `:enable()`). `compare` is one of `"=="`, `"<="`, `">="`
+(the default), `"<"`, `">"`; `player` is a Player or 1-based number, and left out means any player.
+
+| Call | Fires when |
+|---|---|
+| `trigger.count{type=, cargo=, compare=, count=1, player=}` | A player has `count` units of `type` (with `cargo`: a ConVec's kit or a weapon). Space Race: `type="IonDriveModule"`. |
+| `trigger.resource{resource=, compare=, amount=, player=}` | A colony value: `"Food"`, `"CommonOre"`, `"RareOre"`, `"Kids"`, `"Workers"`, `"Scientists"`, `"Colonists"`. |
+| `trigger.set{t1, t2, ..., needed=#list}` | `needed` of the listed triggers (1 to 8) have fired for a player. |
+| `trigger.midas{time=}` | Tick `time` comes, for the player with the most ore in storage (Midas). |
+| `trigger.one_player_left{}` | One player is left (the Last One Standing condition). |
+| `trigger.operational{type=, compare=, count=1, player=}` | A player's working structures of `type` (`player` needed). Land Rush: a Command Center. |
+| `trigger.vehicle_count{compare=, count=, player=}` | A player's vehicles, all types. |
+| `trigger.building_count{compare=, count=, player=}` | A player's structures, all types. |
+
+One-shot defaults are the game's: on for `midas`, `one_player_left` and `operational`, off for the
+rest. A **Trigger** has `.id`, `.valid`, `.enabled`, `:enable()`, `:disable()` and
+`:has_fired(player)`.
+
+```lua
+-- Resource Race, as the stock mr*.dll make it:
+local common = trigger.resource{resource = "CommonOre", amount = 20000}
+local rare   = trigger.resource{resource = "RareOre", amount = 5000}
+mission.victory(trigger.set{common, rare},
+                "Be the first to have 20,000 Common Metal and 5,000 Rare Metal in storage.", {one_shot = true})
+```
+
+An `on` function lives in the Lua state only: a saved game would lose it (multiplayer games aren't
+saved). Needs OPU 1.4.0 or later (it passes the trigger that fired).
 
 ## Unit
 
@@ -365,6 +408,28 @@ A crash writes a one-line summary to the Main log and the full register/stack du
 so a failure is never hidden but the noise stays in one place.
 
 See **[`LOGGING.md`](LOGGING.md)** for the full logging/debug standard every mission should follow.
+
+## Multiplayer missions
+
+A mission can be a multiplayer game rather than a Colony game: scaffold it with
+`op2lua-newmission "<Name>" --players 2 --type LastOneStanding` (or `LandRush`, `SpaceRace`,
+`ResourceRace`, `Midas`). OP2 lists it under that type in the multiplayer lobby; its DLL needs no `c`.
+
+- **Leave `players` out of `placement.lua`.** The lobby has already set each player's colony,
+  colour and human/AI; a `players` entry would override them. `players[1..n]` exist for every
+  player in the game either way.
+- **Read the lobby** in `on_init`: `game.initial_units()`, `game.uses_day_night()`,
+  `game.uses_morale()`, `game.disasters_enabled()`, and each `player.difficulty` (the lobby's
+  resource level: `"Easy"` is High, `"Normal"` Medium, `"Hard"` Low), `player.is_eden`.
+- **Build what depends on the lobby** in `on_init` (bases given out with `game.rand`, resources by
+  level), and keep what never changes (tubes, fixed beacons) in placement.
+- **Win** with `mission.last_one_standing()`, or for the other types with `trigger.*` and
+  `mission.victory` (Space Race: a count trigger per module; Resource Race: a set of two resource
+  triggers; Midas: `trigger.midas`; Land Rush: per-player triggers whose `on` switches an off
+  Last One Standing victory on once every player has settled).
+
+The Tug-O-War sample (`samples/tug-o-war/`) is a remake of the stock 2-player Last One Standing map
+`ml2_31.dll` written this way; `samples/nostalgia/` remakes the 4-player map `ml4_43.dll`.
 
 ## Multiplayer safety (read once, then forget)
 

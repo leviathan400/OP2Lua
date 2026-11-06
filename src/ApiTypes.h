@@ -39,4 +39,10 @@ struct Region {
 void FlushUnitOrders();
 void ResetUnitOrders();
 
+// Triggers made from Lua (trigger.* with an `on=` function) name the stub's OnTrigger export; OPU passes
+// it the trigger that fired, and FireTrigger runs that trigger's Lua function. ResetTriggers() on load
+// (while the old Lua state is still alive: the functions belong to it).
+void FireTrigger(void* pArgs);
+void ResetTriggers();
+
 }  // namespace OP2Lua

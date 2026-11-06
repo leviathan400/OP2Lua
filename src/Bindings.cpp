@@ -1,7 +1,8 @@
 // Bindings.cpp - the author-facing OP2Lua API, bound to the Tethys game API via sol2.
 //
 // game.*     message(text[,sound]), sound(name|id[,to]), rand, tick, create_unit, minutes/seconds
-// mission.*  win, lose
+// mission.*  win, lose, last_one_standing, victory, failure
+// trigger.*  count, resource, set, midas, one_player_left, operational, vehicle_count, building_count
 // Unit       id/type/type_id/alive/owner/valid, move, attack_move, ==
 // Player     is_eden/is_human, owns_any, unit_count
 // Region     :units(player?), :contains(unit), :center()
@@ -12,6 +13,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <deque>
 #include <map>
 #include <sstream>
 #include <string>
@@ -35,6 +37,7 @@ using std::min;
 #include "Tethys/API/Enumerators.h"   // PlayerBuildingEnum / PlayerVehicleEnum / InRectEnumerator
 #include "Tethys/API/GameMap.h"       // GameMap::At (status-bar/editor coords -> internal)
 #include "Tethys/Game/MapObject.h"      // Tethys::MapObj::MiningBeacon (ore type for beacon perception)
+#include "Tethys/Game/MineManager.h"    // OreYield, OreVariant (game.create_beacon)
 #include "Tethys/Game/MapObjectType.h"  // Tethys::MapObjectType (building footprint for site finding)
 #include "Tethys/Game/Research.h"       // Tethys::Research (validate tech ids before use - see ReportBadTech)
 #include "Tethys/Resource/SoundID.h"  // SoundID
@@ -62,6 +65,7 @@ using Tethys::TethysAPI::GameMap;
 using Tethys::TethysAPI::InRectEnumerator;
 using Tethys::TethysAPI::Location;
 using Tethys::TethysAPI::MapRect;
+using Tethys::TethysAPI::MineType;
 using Tethys::TethysAPI::PlayerBuildingEnum;
 using Tethys::TethysAPI::PlayerVehicleEnum;
 using Tethys::TethysAPI::Unit;
@@ -160,9 +164,11 @@ void Game_MoraleSteady(sol::object level) {
   Game::ForceMoraleLevel(lvl, Tethys::AllPlayers);
   LOG_MISSION(INFO) << "game.morale_steady";
 }
-// game.free_morale([player]) - release the lock; morale fluctuates normally again.
-void Game_FreeMorale(sol::optional<int> player) {
-  Game::FreeMoraleLevel(player.value_or(Tethys::AllPlayers));
+// game.free_morale([player]) - release the lock (all players, or one: a Player or a 1-based number); morale
+// fluctuates normally again.
+void Game_FreeMorale(sol::object player) {
+  const bool all = !player.valid() || player == sol::lua_nil;
+  Game::FreeMoraleLevel(all ? static_cast<int>(Tethys::AllPlayers) : PlayerNumFrom(player));
 }
 
 // game.create_unit{ type=, player=, at=, count=, weapon=, direction=, lights= } -> { Unit, ... }
@@ -198,10 +204,15 @@ sol::table Game_CreateUnit(sol::table opts, sol::this_state ts) {
   // player's units that have just advanced into the spawn area. FindUnitPlacementLocation is OP2's own
   // deploy-site finder: a passable, unoccupied tile near 'at', respecting the type's footprint. Each
   // CreateUnit marks its tile occupied, so successive calls scatter the group.
+  // `exact = true` skips the finder and places on `at` itself, as a mission's setup places its bases
+  // (structures beside tubes the finder would step away from). Only for setup-time placement on a
+  // tile known to be free.
+  const bool exact = opts.get_or("exact", false);
   int created = 0;
   const int width = (count > 1) ? 4 : 1;
   for (int i = 0; i < count; ++i) {
-    Location spot = GameMap::FindUnitPlacementLocation(at, type);
+    Location spot = exact ? Location(at.x + (i % width), at.y + (i / width))
+                          : GameMap::FindUnitPlacementLocation(at, type);
     if (spot.x < 0) spot = Location(at.x + (i % width), at.y + (i / width));   // finder failed -> fallback
     Unit u = Game::CreateUnit(type, spot, owner, weapon, dir, lights);
     if (u.IsValid()) ++created;
@@ -222,6 +233,28 @@ sol::table Game_CreateUnit(sol::table opts, sol::this_state ts) {
   return out;
 }
 
+// game.create_beacon{ at=, type=, ore=, yield=, variant= } -> Unit. The runtime twin of a placement.lua
+// beacon, for a mission that decides its beacons when it starts (a stock multiplayer map rolls some
+// yields with game.rand). Same names as placement: type "MiningBeacon" (default) / "MagmaVent" /
+// "Fumarole"; ore "Common" / "Rare" / "Random"; yield "Bar3" / "Bar2" / "Bar1" / "Random";
+// variant "High" / "Mid" / "Low" / "Random".
+Unit Game_CreateBeacon(sol::table opts) {
+  const std::string type = opts.get_or("type", std::string("MiningBeacon"));
+  const std::string ore = opts.get_or("ore", std::string("Random"));
+  MineType mt = MineType::RandomOre;
+  if (type == "Fumarole")       mt = MineType::Fumarole;
+  else if (type == "MagmaVent") mt = MineType::MagmaVent;
+  else if (ore == "Common")     mt = MineType::CommonOre;
+  else if (ore == "Rare")       mt = MineType::RareOre;
+  const std::string y = opts.get_or("yield", std::string("Random"));
+  const Tethys::OreYield yield = (y == "Bar3") ? Tethys::OreYield::Bar3 : (y == "Bar2") ? Tethys::OreYield::Bar2
+                               : (y == "Bar1") ? Tethys::OreYield::Bar1 : Tethys::OreYield::Random;
+  const std::string v = opts.get_or("variant", std::string("Random"));
+  const Tethys::OreVariant variant = (v == "High") ? Tethys::OreVariant::High : (v == "Mid") ? Tethys::OreVariant::Mid
+                                   : (v == "Low") ? Tethys::OreVariant::Low : Tethys::OreVariant::Random;
+  return Game::CreateMine(LocFrom(opts["at"]), mt, yield, variant);
+}
+
 // The internal time trigger references "OP2LuaTrigger" - a no-op function the stub DLL exports -
 // so OP2 can resolve the trigger function (an empty name fails: "couldn't resolve data reference").
 void Mission_Win(sol::variadic_args) {
@@ -233,6 +266,172 @@ void Mission_Lose(sol::variadic_args) {
   using namespace Tethys::TethysAPI;
   LOG_MISSION(INFO) << "mission.lose()";
   CreateFailureCondition(CreateTimeTrigger(1, "OP2LuaTrigger", true, true), true);
+}
+// mission.last_one_standing([text]) - the multiplayer Last One Standing victory, as the stock ml*.dll
+// missions set it up: the game's own one-player-left trigger wrapped in a victory condition. The game
+// decides it per player (a player is out once they have no working Command Center), so unlike
+// mission.win() it is fair in a multiplayer game. `text` is the objective shown in the game's list.
+void Mission_LastOneStanding(sol::optional<std::string> text) {
+  using namespace Tethys::TethysAPI;
+  // The game keeps the text's pointer, not a copy (it shows it in Mission Objectives for the whole game),
+  // so the text must outlive this call: kept here for the process's life (a few bytes per mission).
+  static std::deque<std::string> kept;
+  const std::string& objective = kept.emplace_back(text.value_or("Eliminate your opponents."));
+  LOG_MISSION(INFO) << "mission.last_one_standing(\"" << objective << "\")";
+  CreateVictoryCondition(CreateLastOneStandingTrigger("OP2LuaTrigger", true, true), objective, true, true);
+}
+
+// ---- triggers (trigger.* / mission.victory / mission.failure) -----------------------------
+// The game's own triggers, as the stock missions make them: a Space Race victory is a count trigger for each
+// launched module, a Resource Race one a set of two resource triggers, Midas a Midas trigger, Land Rush per-player
+// operational/colonist/vehicle triggers that switch a disabled last-one-standing victory on. The game checks them
+// every 4 ticks, on every machine alike, so they are safe in a multiplayer game. Each constructor takes an options
+// table: the trigger's own fields plus `on` (a function called with the Trigger when it fires), `one_shot` and
+// `enabled`; it returns the Trigger, a handle with :enable() / :disable() / .enabled / :has_fired(player).
+//
+// A trigger with `on` names the stub's OnTrigger export, which OPU (1.4.0+) calls with the trigger that fired:
+// FireTrigger looks its function up here by trigger id. Without `on` it names the stub's no-op OP2LuaTrigger.
+// The functions live in this Lua state only, so a saved game would lose them (multiplayer games aren't saved).
+using Tethys::TethysAPI::CompareMode;
+using Tethys::TethysAPI::Trigger;
+using Tethys::TethysAPI::TriggerResource;
+
+std::map<int, sol::protected_function> gTriggerFns;
+
+CompareMode CompareFrom(const sol::table& o, const char* dflt) {
+  const std::string c = o.get_or("compare", std::string(dflt));
+  if (c == "==" || c == "=") return CompareMode::Equal;
+  if (c == "<=")             return CompareMode::LowerEqual;
+  if (c == "<")              return CompareMode::Lower;
+  if (c == ">")              return CompareMode::Greater;
+  if (c != ">=") LOG_MISSION(WARNING) << "trigger: unknown compare \"" << c << "\", using >=";
+  return CompareMode::GreaterEqual;
+}
+
+// The trigger function name for a new trigger: the stub's OnTrigger when it has a Lua function to call.
+const char* TriggerFnName(const sol::table& o) {
+  return o.get<sol::object>("on").is<sol::protected_function>() ? "OnTrigger" : "OP2LuaTrigger";
+}
+Trigger Remember(Trigger t, const sol::table& o, const char* what) {
+  sol::object fn = o.get<sol::object>("on");
+  if (fn.is<sol::protected_function>() && t.IsValid()) gTriggerFns[t.GetID()] = fn.as<sol::protected_function>();
+  if (!t.IsValid()) LOG_MISSION(WARNING) << "trigger." << what << ": the game made no trigger";
+  return t;
+}
+int PlayerOpt(const sol::table& o) {
+  sol::object p = o.get<sol::object>("player");
+  return (p.valid() && p != sol::lua_nil) ? PlayerNumFrom(p) : static_cast<int>(Tethys::AllPlayers);
+}
+bool OneShot(const sol::table& o, bool dflt) { return o.get_or("one_shot", dflt); }
+bool Enabled(const sol::table& o)            { return o.get_or("enabled", true); }
+
+// trigger.count{ type=, cargo=, compare=">=", count=1, player= } - how many units of a type a player (or any
+// player) has; `cargo` narrows it (a ConVec's kit, a weapon; any if left out). Space Race: type="IonDriveModule".
+Trigger Trigger_Count(sol::table o) {
+  const MapID type = MapIdFromName(o.get_or("type", std::string()));
+  const std::string cargo = o.get_or("cargo", std::string());
+  const MapID cw = cargo.empty() ? MapID::Any : MapIdFromName(cargo);   // no cargo given: any (as the stock maps)
+  return Remember(Tethys::TethysAPI::CreateCountTrigger(type, cw, CompareFrom(o, ">="), o.get_or("count", 1),
+                                                        TriggerFnName(o), PlayerOpt(o), OneShot(o, false), Enabled(o)),
+                  o, "count");
+}
+// trigger.resource{ resource=, compare=">=", amount=, player= } - resource: "Food" / "CommonOre" / "RareOre" /
+// "Kids" / "Workers" / "Scientists" / "Colonists".
+Trigger Trigger_Resource(sol::table o) {
+  static const std::map<std::string, TriggerResource> names = {
+      {"Food", TriggerResource::Food}, {"CommonOre", TriggerResource::CommonOre}, {"RareOre", TriggerResource::RareOre},
+      {"Kids", TriggerResource::Kids}, {"Workers", TriggerResource::Workers},
+      {"Scientists", TriggerResource::Scientists}, {"Colonists", TriggerResource::Colonists}};
+  const std::string r = o.get_or("resource", std::string("CommonOre"));
+  const auto it = names.find(r);
+  if (it == names.end()) LOG_MISSION(WARNING) << "trigger.resource: unknown resource \"" << r << "\"";
+  const TriggerResource res = (it != names.end()) ? it->second : TriggerResource::CommonOre;
+  return Remember(Tethys::TethysAPI::CreateResourceTrigger(res, CompareFrom(o, ">="), o.get_or("amount", 0),
+                                                           TriggerFnName(o), PlayerOpt(o), OneShot(o, false), Enabled(o)),
+                  o, "resource");
+}
+// trigger.set{ a, b, ..., needed=#list } - fires once `needed` of the listed triggers (1 to 8) have; each player
+// is judged on their own. Resource Race: both resource triggers.
+Trigger Trigger_Set(sol::table o) {
+  std::vector<Trigger> ts;
+  for (size_t i = 1; i <= o.size(); ++i) {
+    sol::object t = o[i];
+    if (t.is<Trigger>()) ts.push_back(t.as<Trigger>());
+  }
+  if (ts.empty() || ts.size() > 8) {
+    LOG_MISSION(WARNING) << "trigger.set: needs 1 to 8 triggers, got " << ts.size();
+    return Trigger();
+  }
+  const int needed = o.get_or("needed", static_cast<int>(ts.size()));
+  const char* fn = TriggerFnName(o);
+  const bool once = OneShot(o, false), on = Enabled(o);
+  using Tethys::TethysAPI::CreateSetTrigger;
+  Trigger t;
+  switch (ts.size()) {
+    case 1: t = CreateSetTrigger(fn, needed, once, on, ts[0]); break;
+    case 2: t = CreateSetTrigger(fn, needed, once, on, ts[0], ts[1]); break;
+    case 3: t = CreateSetTrigger(fn, needed, once, on, ts[0], ts[1], ts[2]); break;
+    case 4: t = CreateSetTrigger(fn, needed, once, on, ts[0], ts[1], ts[2], ts[3]); break;
+    case 5: t = CreateSetTrigger(fn, needed, once, on, ts[0], ts[1], ts[2], ts[3], ts[4]); break;
+    case 6: t = CreateSetTrigger(fn, needed, once, on, ts[0], ts[1], ts[2], ts[3], ts[4], ts[5]); break;
+    case 7: t = CreateSetTrigger(fn, needed, once, on, ts[0], ts[1], ts[2], ts[3], ts[4], ts[5], ts[6]); break;
+    default: t = CreateSetTrigger(fn, needed, once, on, ts[0], ts[1], ts[2], ts[3], ts[4], ts[5], ts[6], ts[7]); break;
+  }
+  return Remember(t, o, "set");
+}
+// trigger.midas{ time= } - Midas: fires at tick `time` for the player with the most ore in storage.
+Trigger Trigger_Midas(sol::table o) {
+  return Remember(Tethys::TethysAPI::CreateMidasTrigger(o.get_or("time", 25000), TriggerFnName(o), OneShot(o, true),
+                                                        Enabled(o)),
+                  o, "midas");
+}
+// trigger.one_player_left{} - the Last One Standing condition (mission.last_one_standing wraps it in a victory).
+Trigger Trigger_OnePlayerLeft(sol::table o) {
+  return Remember(Tethys::TethysAPI::CreateLastOneStandingTrigger(TriggerFnName(o), OneShot(o, true), Enabled(o)),
+                  o, "one_player_left");
+}
+// trigger.operational{ type=, compare=">=", count=1, player= } - a player's working structures of a type (a
+// player is needed: the game misjudges "any player"). Land Rush: a Command Center up.
+Trigger Trigger_Operational(sol::table o) {
+  const int player = PlayerOpt(o);
+  if (player == static_cast<int>(Tethys::AllPlayers)) {
+    LOG_MISSION(WARNING) << "trigger.operational: needs a player";
+    return Trigger();
+  }
+  const MapID type = MapIdFromName(o.get_or("type", std::string("CommandCenter")));
+  return Remember(Tethys::TethysAPI::CreateOperationalTrigger(type, CompareFrom(o, ">="), o.get_or("count", 1), player,
+                                                              TriggerFnName(o), OneShot(o, true), Enabled(o)),
+                  o, "operational");
+}
+// trigger.vehicle_count{ compare=, count=, player= } / trigger.building_count{...} - all of a player's vehicles
+// (or structures).
+Trigger Trigger_VehicleCount(sol::table o) {
+  return Remember(Tethys::TethysAPI::CreateVehicleCountTrigger(CompareFrom(o, ">="), o.get_or("count", 1),
+                                                               TriggerFnName(o), PlayerOpt(o), OneShot(o, false), Enabled(o)),
+                  o, "vehicle_count");
+}
+Trigger Trigger_BuildingCount(sol::table o) {
+  return Remember(Tethys::TethysAPI::CreateBuildingCountTrigger(CompareFrom(o, ">="), o.get_or("count", 1),
+                                                                TriggerFnName(o), PlayerOpt(o), OneShot(o, false), Enabled(o)),
+                  o, "building_count");
+}
+
+// mission.victory(trigger, text[, {one_shot=false, enabled=true}]) - a victory condition: a player wins once
+// `trigger` fires for them (all of a game's victory conditions, for one player). `text` is the objective in the
+// game's Mission Objectives list; the game keeps its pointer, so it is kept here for the process's life.
+Trigger Mission_Victory(Trigger condition, const std::string& text, sol::optional<sol::table> opts) {
+  static std::deque<std::string> kept;
+  const std::string& objective = kept.emplace_back(text);
+  const bool once = opts ? opts->get_or("one_shot", false) : false;
+  const bool on = opts ? opts->get_or("enabled", true) : true;
+  LOG_MISSION(INFO) << "mission.victory(trigger " << condition.GetID() << ", \"" << objective << "\")";
+  return Tethys::TethysAPI::CreateVictoryCondition(condition, objective, once, on);
+}
+// mission.failure(trigger[, {enabled=true}]) - a failure condition: a player loses once `trigger` fires for them.
+Trigger Mission_Failure(Trigger condition, sol::optional<sol::table> opts) {
+  const bool on = opts ? opts->get_or("enabled", true) : true;
+  LOG_MISSION(INFO) << "mission.failure(trigger " << condition.GetID() << ")";
+  return Tethys::TethysAPI::CreateFailureCondition(condition, on);
 }
 
 bool Player_OwnsAny(int num, const std::string& typeName) {
@@ -532,6 +731,22 @@ void FlushUnitOrders() {
 }
 void ResetUnitOrders() { gOrders.clear(); }
 
+void ResetTriggers() { gTriggerFns.clear(); }
+
+void FireTrigger(void* pArgs) {
+  const auto* a = static_cast<const Tethys::TethysAPI::OnTriggerArgs*>(pArgs);
+  if (a == nullptr) return;
+  const auto it = gTriggerFns.find(a->trigger.GetID());
+  if (it == gTriggerFns.end()) return;
+  sol::protected_function fn = it->second;   // a copy: the function may make more triggers
+  try {
+    sol::protected_function_result r = fn(a->trigger);
+    if (!r.valid()) { sol::error e = r; LOG_MISSION(ERROR) << "trigger " << a->trigger.GetID() << ": " << e.what(); }
+  } catch (const std::exception& e) {
+    LOG_MISSION(ERROR) << "trigger " << a->trigger.GetID() << ": " << e.what();
+  }
+}
+
 // When on, AI debug (log.ai) is also echoed to the in-game comms panel so a dev can watch the AI
 // without leaving the game. Reset per mission (fresh Lua state) and toggled via log.show_ai_in_game().
 static bool gAIToComms = false;
@@ -554,6 +769,10 @@ void RegisterBindings(sol::state& lua) {
   // ---- world queries ----
   game.set_function("num_players", []() { return Game::NumPlayers(); });
   game.set_function("num_humans",  []() { return Game::NumHumans();  });
+  // The multiplayer lobby's choices (a Colony game has no lobby: these read the game's defaults).
+  game.set_function("initial_units",  []() { return Game::InitialUnits(); });  // starting vehicles, 0-12
+  game.set_function("uses_day_night", []() { return Game::UsesDayNight(); });  // day and night on
+  game.set_function("uses_morale",    []() { return Game::UsesMorale();   });  // morale free (not steady)
   game.set_function("beacons",     &Game_Beacons);     // discover mining beacons (perception)
   game.set_function("find_place",  &Game_FindPlace);   // find a clear spot to build/place a type
   game.set_function("find_build_site", &Game_FindBuildSite); // footprint-valid structure site (DoBuild anchor)
@@ -573,6 +792,7 @@ void RegisterBindings(sol::state& lua) {
     return Game::CreateMarker(LocFrom(at), mt); });
   game.set_function("create_wreckage", [](sol::object at, int techId, sol::optional<bool> discovered) {
     return Game::CreateWreckage(LocFrom(at), techId, discovered.value_or(false)); });  // techId 8000-12095
+  game.set_function("create_beacon", &Game_CreateBeacon);   // a mining beacon / vent / fumarole at runtime
 
   // ---- disasters (the trailing `now` forces it to trigger immediately instead of after a warning) ----
   game.set_function("create_meteor", [](sol::object at, sol::optional<int> size, sol::optional<bool> now) {
@@ -596,6 +816,9 @@ void RegisterBindings(sol::state& lua) {
   // ---- environment ----
   game.set_function("set_daylight_everywhere", [](bool on) { Game::SetDaylightEverywhere(on); });
   game.set_function("set_daylight_moves",      [](bool on) { Game::SetDaylightMoves(on); });
+  // Where the day/night band starts (a tile column, as the stock missions pass it: e.g. -32). Call in
+  // on_init; with set_daylight_moves(false) the band stays there.
+  game.set_function("set_initial_light_level", [](int position) { GameMap::SetInitialLightLevel(position); });
   game.set_function("set_lava_speed",          [](int n)  { Game::SetLavaSpeed(n);   });
   game.set_function("set_blight_speed",        [](int n)  { Game::SetBlightSpeed(n); });
   // Mark an area's tiles lava-possible (or not), so an eruption's lava can spread there. Lets you
@@ -616,6 +839,28 @@ void RegisterBindings(sol::state& lua) {
   sol::table mission = lua.create_named_table("mission");
   mission.set_function("win", &Mission_Win);
   mission.set_function("lose", &Mission_Lose);
+  mission.set_function("last_one_standing", &Mission_LastOneStanding);
+  mission.set_function("victory", &Mission_Victory);
+  mission.set_function("failure", &Mission_Failure);
+
+  sol::table trigger = lua.create_named_table("trigger");
+  trigger.set_function("count",           &Trigger_Count);
+  trigger.set_function("resource",        &Trigger_Resource);
+  trigger.set_function("set",             &Trigger_Set);
+  trigger.set_function("midas",           &Trigger_Midas);
+  trigger.set_function("one_player_left", &Trigger_OnePlayerLeft);
+  trigger.set_function("operational",     &Trigger_Operational);
+  trigger.set_function("vehicle_count",   &Trigger_VehicleCount);
+  trigger.set_function("building_count",  &Trigger_BuildingCount);
+  lua.new_usertype<Trigger>(
+      "Trigger", sol::no_constructor,
+      "id",        sol::property([](const Trigger& t) { return t.GetID(); }),
+      "valid",     sol::property([](const Trigger& t) { return t.IsValid(); }),
+      "enabled",   sol::property([](const Trigger& t) { return t.IsValid() && t.IsEnabled() != 0; }),
+      "enable",    [](Trigger& t) { if (t.IsValid()) t.Enable(); },
+      "disable",   [](Trigger& t) { if (t.IsValid()) t.Disable(); },
+      "has_fired", [](Trigger& t, sol::object player) { return t.IsValid() && t.HasFired(PlayerNumFrom(player)) != 0; },
+      sol::meta_function::equal_to, [](const Trigger& a, const Trigger& b) { return a.GetID() == b.GetID(); });
 
   // A mission's print() is redirected here by the runtime preamble. This is author/debug output,
   // so it goes to the mission log ONLY (LOG_MISSION) - never the shared Main OP2Lua.log.

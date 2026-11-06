@@ -28,7 +28,7 @@ using Tethys::ibool;
 MISSION_API char      LevelDesc[1024]    = "OP2Lua mission (unpatched template)";
 MISSION_API char      MapName[1024]      = "eden01.map";
 MISSION_API char      TechtreeName[1024] = "MULTITEK.TXT";
-MISSION_API ModDesc   DescBlock          = ModDesc(MissionType::Colony, 2, 12, 0);  // numPlayers patched per-mission by the converter
+MISSION_API ModDesc   DescBlock          = ModDesc(MissionType::Colony, 2, 12, 0);  // type + numPlayers patched per-mission (op2lua-newmission --type/--players)
 MISSION_API ModDescEx DescBlockEx        = {};
 
 // ---- Stub plumbing --------------------------------------------------------------------------

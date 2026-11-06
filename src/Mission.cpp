@@ -266,6 +266,7 @@ void Reset() {
   g = MissionState();
   Placement::Reset();
   OP2Lua::ResetUnitOrders();
+  OP2Lua::ResetTriggers();
 }
 
 }  // namespace OP2Lua::Mission
@@ -327,8 +328,8 @@ OP2LUACORE_API void OP2LuaCore_OnDamageUnit(void* pArgs) {
   if (a != nullptr) DispatchVoid(g.onDamageUnit, "on_damage_unit", a->targetUnit, a->sourceUnit, a->damage);
 }
 
-OP2LUACORE_API void OP2LuaCore_OnTrigger(void*) {
-  // TODO(triggers): route to per-name trigger callbacks.
+OP2LUACORE_API void OP2LuaCore_OnTrigger(void* pArgs) {
+  if (g.active) OP2Lua::FireTrigger(pArgs);   // the `on=` function of the trigger that fired
 }
 
 }  // extern "C"

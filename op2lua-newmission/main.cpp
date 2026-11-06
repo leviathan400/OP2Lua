@@ -99,12 +99,13 @@ bool patchWideField(std::vector<std::uint8_t>& buf, const std::string& placehold
   return true;
 }
 
-// Patch the DescBlock's numPlayers field so the mission can host more than 2 players. The stub bakes
+// Patch the DescBlock's mission type and numPlayers. The stub bakes
 // ModDesc(MissionType::Colony=-1, numPlayers=2, maxTechLevel=12, unitMission=0), which lays out as
 // bytes  FF FF FF FF | 02 00 00 00 | 0C 00 00 00 | 00 00 00 00 . We find that signature and overwrite
-// the numPlayers byte. (OP2 needs this in the DLL; placement players_count alone is not enough - an
-// extra player would be out of bounds and crash.)
-bool patchPlayers(std::vector<std::uint8_t>& buf, int n) {
+// the type (an int) and the numPlayers byte. OP2 needs both in the DLL: it lists a mission by its type
+// (Colony, or a multiplayer type such as Last One Standing) and sizes the game by numPlayers;
+// placement players_count alone is not enough - an extra player would be out of bounds and crash.
+bool patchDesc(std::vector<std::uint8_t>& buf, int type, int n) {
   static const std::uint8_t pat[12] =
       { 0xFF, 0xFF, 0xFF, 0xFF, 0x02, 0x00, 0x00, 0x00, 0x0C, 0x00, 0x00, 0x00 };
   auto it = std::search(buf.begin(), buf.end(), pat, pat + 12);
@@ -112,8 +113,21 @@ bool patchPlayers(std::vector<std::uint8_t>& buf, int n) {
     std::cerr << "error: DescBlock signature not found in stub DLL (can't set player count).\n";
     return false;
   }
-  buf[static_cast<std::size_t>(it - buf.begin()) + 4] = static_cast<std::uint8_t>(n);  // numPlayers byte
+  const std::size_t at = static_cast<std::size_t>(it - buf.begin());
+  for (int k = 0; k < 4; ++k) buf[at + k] = static_cast<std::uint8_t>(static_cast<std::uint32_t>(type) >> (8 * k));
+  buf[at + 4] = static_cast<std::uint8_t>(n);  // numPlayers byte
   return true;
+}
+
+// Mission type names (--type) -> the DescBlock's MissionType values.
+int missionTypeFrom(const std::string& name) {
+  if (name == "Colony")          return -1;
+  if (name == "LandRush")        return -4;
+  if (name == "SpaceRace")       return -5;
+  if (name == "ResourceRace")    return -6;
+  if (name == "Midas")           return -7;
+  if (name == "LastOneStanding") return -8;
+  return 0;
 }
 
 // Mission name -> file base name (alphanumerics only). The DLL base name decides which scripts it
@@ -217,10 +231,12 @@ void printUsage() {
   std::cout <<
     "op2lua-newmission - scaffold a new OP2Lua mission\n\n"
     "Usage:\n"
-    "  op2lua-newmission \"<Mission Name>\" [--map <file.map>] [--players <1-6>] [--out <dir>] [--stub <path>]\n\n"
+    "  op2lua-newmission \"<Mission Name>\" [--map <file.map>] [--players <1-6>] [--type <type>] [--out <dir>] [--stub <path>]\n\n"
     "Options:\n"
     "  --map     <file>   map the mission uses (default: eden01.map)\n"
     "  --players <1-6>    number of players in the mission (default: 2) - patches the DLL's DescBlock\n"
+    "  --type    <type>   Colony (default), or a multiplayer type: LandRush, SpaceRace, ResourceRace,\n"
+    "                     Midas, LastOneStanding - patches the DLL's DescBlock; OP2 lists it there\n"
     "  --out     <dir>    output directory (default: ./out)\n"
     "  --stub    <path>   path to LuaMission.dll (default: auto-detect near cwd/exe)\n"
     "  -h, --help         show this help\n\n"
@@ -232,6 +248,7 @@ void printUsage() {
 int main(int argc, char** argv) {
   std::string name, map = "eden01.map", outDir = "out", stub;
   int players = 2;
+  std::string type = "Colony";
 
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
@@ -244,6 +261,7 @@ int main(int argc, char** argv) {
     else if (a == "--out")     outDir  = next("--out");
     else if (a == "--stub")    stub    = next("--stub");
     else if (a == "--players") players = std::stoi(next("--players"));
+    else if (a == "--type")    type    = next("--type");
     else if (!a.empty() && a[0] == '-') { std::cerr << "error: unknown option " << a << "\n"; return 2; }
     else if (name.empty()) name = a;
     else { std::cerr << "error: unexpected argument \"" << a << "\"\n"; return 2; }
@@ -251,6 +269,8 @@ int main(int argc, char** argv) {
 
   if (name.empty()) { printUsage(); return 2; }
   if (players < 1 || players > 6) { std::cerr << "error: --players must be 1-6.\n"; return 2; }
+  const int missionType = missionTypeFrom(type);
+  if (missionType == 0) { std::cerr << "error: unknown --type " << type << ".\n"; return 2; }
 
   const std::string base = baseNameFrom(name);
   if (base.empty()) { std::cerr << "error: name \"" << name << "\" has no letters/digits.\n"; return 2; }
@@ -272,7 +292,7 @@ int main(int argc, char** argv) {
   if (!patchField(dll, kLevelDescTemplate, name)) return 1;       // menu name (OP2 mission list)
   if (!patchField(dll, kMapNameTemplate, map))    return 1;       // map file
   if (!patchWideField(dll, kDescPlaceholder, name)) return 1;     // Windows file-description = name
-  if (players != 2 && !patchPlayers(dll, players)) return 1;      // DescBlock numPlayers (>2 support)
+  if ((players != 2 || missionType != -1) && !patchDesc(dll, missionType, players)) return 1;  // type + numPlayers
 
   fs::create_directories(outDir, ec);
   const fs::path outPath = outDir;

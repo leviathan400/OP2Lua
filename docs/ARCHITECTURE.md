@@ -157,6 +157,8 @@ return {
   type = "Colony",            -- Colony | MultiLastOneStanding | ... (see OPM_FORMAT)
   max_tech = 12,
 
+  -- Optional: a multiplayer mission leaves it out, so the lobby's colonies and colours stand
+  -- (players[] still holds every player in the game).
   players = {
     [1] = { colony="Eden",     human=true,  color="Blue",
             resources = { food=1000, kids=10, workers=14, scientists=8,

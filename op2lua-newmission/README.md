@@ -36,11 +36,14 @@ The `musl` target produces a fully static ELF that runs on any Linux distro.
 op2lua-newmission "My First Mission"
 op2lua-newmission "Red Dawn" --map sgame01.map --out ./missions
 op2lua-newmission "Test" --stub ../bin/LuaMission.dll
+op2lua-newmission "Duel" --map on2_02.map --players 2 --type LastOneStanding
 ```
 
 | Option | Meaning |
 |---|---|
 | `--map <file>` | map the mission uses (default `eden01.map`) |
+| `--players <1-6>` | players in the mission (default 2); patched into the DLL's `DescBlock` |
+| `--type <type>` | `Colony` (default), or a multiplayer type: `LandRush`, `SpaceRace`, `ResourceRace`, `Midas`, `LastOneStanding`; patched into the `DescBlock`, and OP2 lists the mission under it |
 | `--out <dir>` | output directory (default `./out`) |
 | `--stub <path>` | path to `LuaMission.dll` (default: auto-detected near the cwd / executable) |
 | `-h`, `--help` | usage |

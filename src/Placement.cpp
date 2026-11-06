@@ -250,6 +250,15 @@ void ApplyPlayers(sol::state& L, sol::table& luaPlayers) {
   }
 }
 
+// Every player in the game gets a handle, listed in placement or not. A multiplayer mission leaves
+// `players` out of placement.lua: the lobby has already chosen each player's colony, colour and
+// human/AI, and ApplyPlayers would override them.
+void RegisterAllPlayers(sol::table& luaPlayers) {
+  for (int num = 0; num < Game::NumPlayers(); ++num) {
+    if (!luaPlayers[num + 1].valid()) luaPlayers[num + 1] = LuaPlayer{ num };
+  }
+}
+
 void ApplyUnits(sol::table& luaUnits) {
   sol::optional<sol::table> units = gPlacement["units"];
   if (!units) return;
@@ -400,7 +409,16 @@ std::string DeclaredMap() {
 }
 
 void Apply() {
-  if (!gPlacement.valid() || gApplied) return;
+  if (gApplied) return;
+  if (!gPlacement.valid()) {
+    // A script-only mission: no layout to build, but mission.lua still needs players[].
+    sol::state& L = LuaHost::Get().lua();
+    sol::table luaPlayers = L.create_table();
+    RegisterAllPlayers(luaPlayers);
+    L["players"] = luaPlayers;
+    gApplied = true;
+    return;
+  }
   sol::state& L = LuaHost::Get().lua();
 
   sol::table luaPlayers = L.create_table();
@@ -409,6 +427,7 @@ void Apply() {
   sol::table luaMarkers = L.create_table();
 
   ApplyPlayers(L, luaPlayers);
+  RegisterAllPlayers(luaPlayers);
   ApplyBeacons(luaUnits);   // beacons are terrain - create them BEFORE units, so a mine building
   ApplyUnits(luaUnits);     // placed on a beacon finds it (else CreateUnit faults on the missing beacon)
   ApplyWalls();

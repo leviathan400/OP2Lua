@@ -78,6 +78,9 @@ target_compile_definitions(OP2LuaCore PRIVATE
   _CRT_SECURE_NO_WARNINGS
   MAKE_LIB                        # build Lua as a library
 )
+if(MSVC)
+  target_compile_options(OP2LuaCore PRIVATE /bigobj)  # sol2's templates: Bindings.cpp passes the default section limit
+endif()
 target_link_libraries(OP2LuaCore PRIVATE dbghelp)  # crash reporter
 set_target_properties(OP2LuaCore PROPERTIES OUTPUT_NAME "OP2LuaCore" PREFIX "")
 

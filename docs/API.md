@@ -130,6 +130,7 @@ as a raw integer SoundID.
 | `game.create_blight(at [, spreadSpeed])` / `game.unset_blight(at)` | Add / remove the Blight. |
 | `game.set_lava_speed(n)` / `game.set_blight_speed(n)` | Spread speeds. |
 | `game.set_lava_possible(area [, on])` | Mark tiles as lava-passable so an eruption's flow can reach them (carve a channel). `on` defaults to true. |
+| `game.tile(at)` / `game.set_tile(at, index)` | A tile's graphic, as its index in the map's tile mappings (what a map editor shows). The stock lava maps swap in volcano tiles before an eruption. |
 | `game.disasters_enabled()` | Whether disasters are enabled for this game. Returns **false** in Colony Games (no disasters toggle there - only Difficulty), so a colony mission that wants disasters must call them directly / force its director. Reflects the host's real choice in multiplayer/skirmish. |
 | `game.set_daylight_everywhere(on)` / `game.set_daylight_moves(on)` | Full daylight / day-night cycle. |
 | `game.set_initial_light_level(position)` | Where the day/night band starts, as the stock missions set it (e.g. `-32`); with `set_daylight_moves(false)` it stays there. |
@@ -159,17 +160,32 @@ called with the Trigger when it fires), `one_shot` (fire once, or every time the
 | Call | Fires when |
 |---|---|
 | `trigger.count{type=, cargo=, compare=, count=1, player=}` | A player has `count` units of `type` (with `cargo`: a ConVec's kit or a weapon). Space Race: `type="IonDriveModule"`. |
-| `trigger.resource{resource=, compare=, amount=, player=}` | A colony value: `"Food"`, `"CommonOre"`, `"RareOre"`, `"Kids"`, `"Workers"`, `"Scientists"`, `"Colonists"`. |
+| `trigger.resource{resource=, compare=, amount=, player=}` | A colony value: `"Food"`, `"CommonOre"`, `"RareOre"`, `"Kids"`, `"Workers"`, `"Scientists"`, `"Colonists"`, or `"Ore"` (the game's resource 7, which the stock Labyrinth waits on). |
 | `trigger.set{t1, t2, ..., needed=#list}` | `needed` of the listed triggers (1 to 8) have fired for a player. |
 | `trigger.midas{time=}` | Tick `time` comes, for the player with the most ore in storage (Midas). |
 | `trigger.one_player_left{}` | One player is left (the Last One Standing condition). |
 | `trigger.operational{type=, compare=, count=1, player=}` | A player's working structures of `type` (`player` needed). Land Rush: a Command Center. |
 | `trigger.vehicle_count{compare=, count=, player=}` | A player's vehicles, all types. |
 | `trigger.building_count{compare=, count=, player=}` | A player's structures, all types. |
+| `trigger.research{tech=, player=}` | A player has researched the topic `tech` (its id). |
+| `trigger.time{time=}` or `{min=, max=}` | `time` ticks pass, or a time the game draws once between `min` and `max` when the trigger is made. With `one_shot = false`, every that long. |
 
-One-shot defaults are the game's: on for `midas`, `one_player_left` and `operational`, off for the
-rest. A **Trigger** has `.id`, `.valid`, `.enabled`, `:enable()`, `:disable()` and
-`:has_fired(player)`.
+One-shot defaults are the game's: on for `midas`, `one_player_left`, `operational` and `time`, off
+for the rest. A **Trigger** has `.id`, `.valid`, `.enabled`, `:enable()`, `:disable()`,
+`:has_fired(player)` and `:destroy()` (ends it; its `on` function is forgotten).
+
+```lua
+-- A disaster every 120 to 240 marks, as the stock ml2_31.dll does it: each one ends the trigger
+-- that fired and makes the next, so every wait is drawn anew.
+local function disaster(t)
+  game.create_meteor({ game.rand(64) + 1, game.rand(64) + 1 }, 1)
+  t:destroy()
+  trigger.time{min = 12000, max = 24000, one_shot = false, on = disaster}
+end
+if game.disasters_enabled() then
+  trigger.time{min = 12000, max = 24000, one_shot = false, on = disaster}
+end
+```
 
 ```lua
 -- Resource Race, as the stock mr*.dll make it:
@@ -181,6 +197,62 @@ mission.victory(trigger.set{common, rare},
 
 An `on` function lives in the Lua state only: a saved game would lose it (multiplayer games aren't
 saved). Needs OPU 1.4.0 or later (it passes the trigger that fired).
+
+## ai.* (the game's AI groups)
+
+The game's own computer-player machinery, as the stock missions use it: you set the groups up, the
+game runs them. A **building group** keeps standing the structures, tubes and walls it has recorded
+(its ConVecs rebuild them) and makes the vehicles other groups want; a **mining group** runs its
+Cargo Trucks between a mine and a smelter; a **fight group** guards an area (or patrols, or attacks).
+Coordinates are author coords, as everywhere; rectangles are `{x1, y1, x2, y2}`.
+
+| Call | |
+|---|---|
+| `ai.building_group(player)` / `ai.fight_group(player)` / `ai.mining_group(player)` | A new group of that player's, as a `Group`. |
+| `ai.unit_block{ {type=, at=, direction=, weapon=}, ... }` | A table of units (the stock missions' `UnitRecord` arrays), for `add_units` and `record_unit_block`. `rotation=` (0-255) instead of `direction` for a heading in between. |
+| `player:set_default_group(group)` | The group the player's new units join when no other takes them. |
+| `player:default_group()` | That group as the game keeps it: the fight group it makes for each player at the start, unless a mission set another. |
+
+**Any group:** `.id`, `.kind` (`"Building"` / `"Fight"` / `"Mining"`), `.valid`, `:units()`,
+`:unit_count()`, `:first_of_type(type[, weapon])`, `:take_unit(unit)`, `:remove_unit(unit)`,
+`:add_units(block)` (makes the block's units for the group's player, into the group, up to 32),
+`:set_targ_count(type, weapon|nil, count)` (how many of a unit it wants: its building group makes the
+rest), `:clear_targ_count()`, `:set_lights(on)`, `:set_delete_when_empty(on)`, `:enable()`,
+`:disable()`, `:destroy()`.
+
+**Building group:** `:set_rect(area)` (where its ConVecs wait), `:record_building(at, type[, kit or
+weapon][, group])` (a factory's output goes to `group`), `:record_unit_block(block[, group])` (every
+structure of the block), `:record_tube(at)`, `:record_tubes_touching(at)` (the tubes joined to the
+one at `at`), `:record_wall(at[, type])`, `:record_veh_reinforce_group(group, priority)` (make the
+vehicles `group` wants; higher priority first), `:unrecord_veh_group(group)`.
+
+**Mining group:** `:setup(mine, smelter, area)` (the structures at those tiles, or two Units), or
+`:setup(mine, smelter, mine_type, smelter_type, area)` for ones still to be built.
+
+**Fight group:** `:set_rect(area)` (where it waits), `:add_guarded_rect(area)`,
+`:clear_guarded_rects()`, `:do_guard_rect()`, `:do_patrol_only()`, `:do_guard_group()`,
+`:do_guard_unit()`, `:do_attack_enemy()`, `:do_attack_unit()`, `:do_exit_map()`,
+`:set_attack_type(type)`, `:set_target_group(group)`, `:set_target_unit(unit)`,
+`:set_follow_mode(n)`, `:set_combine_fire([on])`.
+
+```lua
+-- A computer player's base that rebuilds itself and keeps four Lynx on guard (Peacekeeper's, cut down):
+local base  = ai.building_group(ai_player)
+base:set_rect({ 64, 23, 74, 33 })
+base:add_units(ai.unit_block{ { type = "CommandCenter", at = { 69, 32 } }, { type = "VehicleFactory", at = { 68, 39 } } })
+base:record_tubes_touching({ 69, 32 })
+local guard = ai.fight_group(ai_player)
+guard:set_rect({ 51, 17, 80, 47 })
+guard:add_guarded_rect({ 44, 12, 87, 53 })
+guard:do_guard_rect()
+guard:set_targ_count("Lynx", "Microwave", 4)
+base:record_veh_reinforce_group(guard, 1)
+```
+
+A multiplayer game has a computer player only when the mission's `DescBlockEx` asks for one: the
+converter (`op2dll lua`) sets it in the stub for a stock map that has one, and the computer player is
+the one after the humans (`players[game.num_humans() + 1]`). Groups, like `on` functions, aren't
+kept in a saved game. `ai:` lines in the AI log name each group made.
 
 ## Unit
 
@@ -201,7 +273,7 @@ saved). Needs OPU 1.4.0 or later (it passes the trigger that fired).
 | `unit.command` | Current command (raw int). |
 | `unit.is_building` / `unit.is_vehicle` / `unit.is_factory` / `unit.is_offensive` | Classification. |
 | `unit.enabled` / `unit.idled` / `unit.disabled` / `unit.under_construction` | Building status. |
-| `unit.busy` / `unit.is_emped` / `unit.is_infected` | Activity / status effects. |
+| `unit.busy` / `unit.is_emped` / `unit.is_infected` | Activity / status effects. `busy` is the game's `Unit::IsBusy`: the unit has a command (a Spaceport until its rocket is built). |
 
 **Orders & actions (methods)**
 
@@ -246,6 +318,7 @@ saved). Needs OPU 1.4.0 or later (it passes the trigger that fired).
 | Method | For |
 |---|---|
 | `unit:produce(type [, weapon])` | Vehicle/Structure Factory: queue a unit or kit. |
+| `unit:develop(type)` | Spaceport: build a rocket or its cargo (`"EMPMissile"`, `"SolarSatellite"`, a starship module...). |
 | `unit:set_factory_cargo(bay, type [, extra])` / `unit:transfer_cargo(bay)` | Preload a kit into bay `1..6` / move cargo to a bay. |
 | `unit:factory_cargo(bay)` | Read the kit type name in a 1-based factory bay (`"None"` if empty). |
 | `unit:research(techId [, scientists])` | Lab: begin researching a tech. |
@@ -362,11 +435,12 @@ A few things are about Outpost 2 itself, not OP2Lua - worth knowing:
   when(function() return not players[2]:owns_any("CommandCenter") end, function() mission.win() end)
   ```
   `on_destroy_unit` is fine for *vehicles*.
-- **A "computer" player has no AI brain.** In a scripted mission the enemy does only what your
-  script tells it. You can drive a real economy with the engineering API (`survey`/`deploy`/
-  `mining_route`/`produce`/`build`/`research`) on its starting units, or simply spawn and command
-  forces (`create_unit` + `unit:attack_move`) - or both. The `bot=` field in `placement.lua` is a
-  multiplayer concept and is currently ignored.
+- **A "computer" player has no AI brain of its own.** It does what your script tells it, or what
+  the game's AI groups (`ai.*`) do with what you record for them: rebuild, mine, make vehicles and
+  guard, as the stock missions' computer players do. You can also drive a real economy with the
+  engineering API (`survey`/`deploy`/`mining_route`/`produce`/`build`/`research`) on its starting
+  units, or simply spawn and command forces (`create_unit` + `unit:attack_move`). The `bot=` field
+  in `placement.lua` is a multiplayer concept and is currently ignored.
 - **Enemy structures only auto-fire at *hostile* players.** That requires the mission's player
   count to be correct (the converter sets it); units owned by an un-initialized player won't be
   treated as enemies even though they exist.

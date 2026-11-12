@@ -36,6 +36,7 @@ const std::vector<std::pair<const char*, MapID>>& MapIdTable() {
       { "RecreationFacility", MapID::RecreationFacility }, { "University", MapID::University },
       { "Agridome", MapID::Agridome }, { "DIRT", MapID::DIRT }, { "Garage", MapID::Garage },
       { "MagmaWell", MapID::MagmaWell }, { "MeteorDefense", MapID::MeteorDefense },
+      { "MiningBeacon", MapID::MiningBeacon }, { "MagmaVent", MapID::MagmaVent }, { "Fumarole", MapID::Fumarole },
       { "GeothermalPlant", MapID::GeothermalPlant }, { "ArachnidFactory", MapID::ArachnidFactory },
       { "ConsumerFactory", MapID::ConsumerFactory }, { "StructureFactory", MapID::StructureFactory },
       { "VehicleFactory", MapID::VehicleFactory }, { "StandardLab", MapID::StandardLab },
@@ -49,6 +50,8 @@ const std::vector<std::pair<const char*, MapID>>& MapIdTable() {
       { "Starflare", MapID::Starflare }, { "Supernova", MapID::Supernova },
       { "ESG", MapID::ESG }, { "Stickyfoam", MapID::Stickyfoam }, { "ThorsHammer", MapID::ThorsHammer },
       { "Wreckage", MapID::Wreckage },
+      // A Spaceport's EMP missile ('EMP_MISSILE'), for unit:produce on a Spaceport and unit:launch.
+      { "EMPMissile", MapID::EMPMissile },
       // Starship / satellites + Spaceport cargo rockets (for the Starship colony victory).
       { "EDWARDSatellite", MapID::EDWARDSatellite }, { "SolarSatellite", MapID::SolarSatellite },
       { "IonDriveModule", MapID::IonDriveModule }, { "FusionDriveModule", MapID::FusionDriveModule },

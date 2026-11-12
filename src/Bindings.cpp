@@ -7,6 +7,7 @@
 // Player     is_eden/is_human, owns_any, unit_count
 // Region     :units(player?), :contains(unit), :center()
 // ChatArgs   text (get/set), player
+// ai.*       building_group / fight_group / mining_group, unit_block; Group (the game's AI groups)
 //
 // Determinism (multiplayer): the only randomness exposed is game.rand -> the engine's SYNCED RNG.
 // State-changing calls go through Tethys (synced commands); no wall-clock, no math.random/os/io.
@@ -36,6 +37,8 @@ using std::min;
 #include "Tethys/API/Trigger.h"       // CreateTimeTrigger / CreateVictoryCondition / CreateFailureCondition
 #include "Tethys/API/Enumerators.h"   // PlayerBuildingEnum / PlayerVehicleEnum / InRectEnumerator
 #include "Tethys/API/GameMap.h"       // GameMap::At (status-bar/editor coords -> internal)
+#include "Tethys/API/ScGroup.h"       // BuildingGroup / FightGroup / MiningGroup (ai.*)
+#include "Tethys/API/UnitBlock.h"     // UnitBlock / UnitRecord (ai.unit_block)
 #include "Tethys/Game/MapObject.h"      // Tethys::MapObj::MiningBeacon (ore type for beacon perception)
 #include "Tethys/Game/MineManager.h"    // OreYield, OreVariant (game.create_beacon)
 #include "Tethys/Game/MapObjectType.h"  // Tethys::MapObjectType (building footprint for site finding)
@@ -297,6 +300,8 @@ using Tethys::TethysAPI::Trigger;
 using Tethys::TethysAPI::TriggerResource;
 
 std::map<int, sol::protected_function> gTriggerFns;
+bool IsValidTechId(int techId);                 // below, with the Player bindings
+void ReportBadTech(const char* fn, int techId);
 
 CompareMode CompareFrom(const sol::table& o, const char* dflt) {
   const std::string c = o.get_or("compare", std::string(dflt));
@@ -341,7 +346,9 @@ Trigger Trigger_Resource(sol::table o) {
   static const std::map<std::string, TriggerResource> names = {
       {"Food", TriggerResource::Food}, {"CommonOre", TriggerResource::CommonOre}, {"RareOre", TriggerResource::RareOre},
       {"Kids", TriggerResource::Kids}, {"Workers", TriggerResource::Workers},
-      {"Scientists", TriggerResource::Scientists}, {"Colonists", TriggerResource::Colonists}};
+      {"Scientists", TriggerResource::Scientists}, {"Colonists", TriggerResource::Colonists},
+      // 7: past Tethys's list, but the game takes it (the stock Labyrinth, ml2_11, waits on a player's ore with it).
+      {"Ore", static_cast<TriggerResource>(7)}};
   const std::string r = o.get_or("resource", std::string("CommonOre"));
   const auto it = names.find(r);
   if (it == names.end()) LOG_MISSION(WARNING) << "trigger.resource: unknown resource \"" << r << "\"";
@@ -384,6 +391,28 @@ Trigger Trigger_Midas(sol::table o) {
   return Remember(Tethys::TethysAPI::CreateMidasTrigger(o.get_or("time", 25000), TriggerFnName(o), OneShot(o, true),
                                                         Enabled(o)),
                   o, "midas");
+}
+// trigger.time{ time= } or { min=, max= } - fires after `time` ticks, or after a time the game draws once between
+// `min` and `max` when the trigger is made (one_shot: true by default; with one_shot = false, every that long). The
+// stock missions' disasters: a time trigger whose function makes the next one.
+Trigger Trigger_Time(sol::table o) {
+  sol::optional<int> time = o["time"], min = o["min"], max = o["max"];
+  if (time) return Remember(Tethys::TethysAPI::CreateTimeTrigger(*time, TriggerFnName(o), OneShot(o, true), Enabled(o)), o, "time");
+  if (!min || !max) {
+    LOG_MISSION(WARNING) << "trigger.time: needs time, or min and max";
+    return Trigger();
+  }
+  return Remember(Tethys::TethysAPI::CreateTimeTrigger(*min, *max, TriggerFnName(o), OneShot(o, true), Enabled(o)), o, "time");
+}
+// trigger.research{ tech=, player= } - a player (or any player) has researched the topic `tech` (its id).
+Trigger Trigger_Research(sol::table o) {
+  const int tech = o.get_or("tech", 0);
+  if (!IsValidTechId(tech)) {
+    ReportBadTech("trigger.research", tech);
+    return Trigger();
+  }
+  return Remember(Tethys::TethysAPI::CreateResearchTrigger(tech, TriggerFnName(o), PlayerOpt(o), OneShot(o, false), Enabled(o)),
+                  o, "research");
 }
 // trigger.one_player_left{} - the Last One Standing condition (mission.last_one_standing wraps it in a victory).
 Trigger Trigger_OnePlayerLeft(sol::table o) {
@@ -705,6 +734,20 @@ static bool GuardedDoze(Unit u, MapRect a)             { __try { u.DoDoze(a);   
 static bool GuardedSalvage(Unit u, MapRect a, Unit g)  { __try { u.DoSalvage(a, g);     return true; } __except (1) { return false; } }
 static bool GuardedLaunch(Unit u, Location t)          { __try { u.DoLaunch(t);         return true; } __except (1) { return false; } }
 static bool GuardedTransferCargo(Unit u, int bay)      { __try { u.DoTransferCargo(bay); return true; } __except (1) { return false; } }
+// Unit::IsBusy as Outpost2.exe exports it (0x475E60), the call the stock missions make: whether the unit has a
+// command (MapObject +0x21, Tethys's command_), e.g. a Spaceport until its rocket is built. Tethys's IsBusy reads the
+// byte before it (+0x20, isBusy_), which goes false while a Spaceport still builds.
+static bool GameIsBusy(const Unit& u) {
+  if (!u.IsValid()) return false;
+  using IsBusyFn = int(__thiscall*)(const Unit*);
+  return reinterpret_cast<IsBusyFn>(0x475E60)(&u) != 0;
+}
+// Unit::DoDevelop(map_id), exported by Outpost2.exe at 0x4764F0 (Tethys has no wrapper): a Spaceport builds a
+// rocket or its cargo, as the stock missions ask (AutoDemo 3's EMP missile). DoProduce doesn't start one there.
+static bool GuardedDevelop(Unit u, MapID t) {
+  using DoDevelopFn = void(__thiscall*)(Unit*, MapID);
+  __try { reinterpret_cast<DoDevelopFn>(0x4764F0)(&u, t); return true; } __except (1) { return false; }
+}
 
 void FlushUnitOrders() {
   // A freshly-created unit is DRAWN and IsLive() within a tick, but its movement/command state isn't
@@ -745,6 +788,209 @@ void FireTrigger(void* pArgs) {
   } catch (const std::exception& e) {
     LOG_MISSION(ERROR) << "trigger " << a->trigger.GetID() << ": " << e.what();
   }
+}
+
+// --- AI groups (ai.*) ------------------------------------------------------------------------
+// The game's own computer-player machinery, as the stock missions drive it: a BuildingGroup rebuilds the
+// structures, tubes and walls it has recorded and produces the vehicles other groups ask for; a MiningGroup runs
+// its trucks between a mine and a smelter; a FightGroup guards (or patrols, or attacks). The game runs them; a
+// mission only sets them up. A Group handle holds the game's stub id and which kind it is.
+enum class GroupKind { Plain, Building, Fight, Mining };
+struct LuaGroup {
+  int       id   = -1;
+  GroupKind kind = GroupKind::Plain;
+};
+// A UnitBlock: a table of unit records (the stock missions' UnitRecord arrays). The game keeps pointers to the
+// records, so blocks live as long as the process.
+struct LuaUnitBlock {
+  Tethys::TethysAPI::UnitBlock* block = nullptr;
+};
+
+using Tethys::TethysAPI::BuildingGroup;
+using Tethys::TethysAPI::FightGroup;
+using Tethys::TethysAPI::MiningGroup;
+using Tethys::TethysAPI::ScGroup;
+using Tethys::TethysAPI::UnitBlock;
+using Tethys::TethysAPI::UnitRecord;
+
+const char* GroupKindName(GroupKind k) {
+  switch (k) {
+    case GroupKind::Building: return "Building";
+    case GroupKind::Fight:    return "Fight";
+    case GroupKind::Mining:   return "Mining";
+    default:                  return "Plain";
+  }
+}
+bool GroupIs(const LuaGroup& g, GroupKind k, const char* fn) {
+  if (g.id >= 0 && g.kind == k) return true;
+  LOG_AI(WARNING) << "group:" << fn << ": needs a " << GroupKindName(k) << " group (this is "
+                  << GroupKindName(g.kind) << " #" << g.id << ")";
+  return false;
+}
+MapID WeaponOpt(const sol::object& o) {
+  return o.is<std::string>() ? MapIdFromName(o.as<std::string>()) : MapID::None;
+}
+
+// ai.unit_block{ { type=, at=, direction=|rotation=, weapon=, cargo=, amount= }, ... } - `at` in author coords;
+// `rotation` is the game's heading (0-255, East 0, South 64), `direction` a name as create_unit takes.
+LuaUnitBlock Ai_UnitBlock(sol::table list) {
+  static std::deque<std::vector<UnitRecord>> tables;
+  static std::deque<UnitBlock>               blocks;
+  std::vector<UnitRecord>& recs = tables.emplace_back();
+  for (size_t i = 1; i <= list.size(); ++i) {
+    sol::optional<sol::table> r = list[i];
+    if (!r) continue;
+    const std::string typeName = r->get_or("type", std::string());
+    const MapID type = MapIdFromName(typeName);
+    if (type == MapID::None) { LOG_AI(WARNING) << "ai.unit_block: unknown type '" << typeName << "'"; continue; }
+    const Location at = LocFrom(r->get<sol::object>("at"));
+    sol::optional<int> rot = (*r)["rotation"];
+    sol::optional<std::string> dir = (*r)["direction"];
+    const int rotation = rot ? *rot : (dir ? DirFromName(*dir) * 32 : 0);
+    const std::string cargo = r->get_or("cargo", std::string());
+    const int cargoType = cargo.empty() ? 0 : std::max(0, CargoTypeFromName(cargo));
+    // Classification NotSet (0x10), as every record of the stock missions' tables has it (AutoDemo 2's, La Corrida's).
+    recs.emplace_back(type, at.x, at.y, 0, rotation, WeaponOpt(r->get<sol::object>("weapon")),
+                      Tethys::UnitClassification::NotSet, static_cast<uint16_t>(cargoType),
+                      static_cast<uint16_t>(r->get_or("amount", 0)));
+  }
+  recs.emplace_back();   // the table ends with a record of no type
+  return LuaUnitBlock{ &blocks.emplace_back(recs.data()) };
+}
+
+LuaGroup Ai_Create(const sol::object& player, GroupKind kind) {
+  const int num = PlayerNumFrom(player);
+  if (num < 0) { LOG_AI(WARNING) << "ai: a group needs a player"; return LuaGroup{}; }
+  int id = -1;
+  switch (kind) {
+    case GroupKind::Building: id = Tethys::TethysAPI::CreateBuildingGroup(_Player(num)).GetID(); break;
+    case GroupKind::Fight:    id = Tethys::TethysAPI::CreateFightGroup(_Player(num)).GetID();    break;
+    case GroupKind::Mining:   id = Tethys::TethysAPI::CreateMiningGroup(_Player(num)).GetID();   break;
+    default: break;
+  }
+  if (id < 0) LOG_AI(WARNING) << "ai: the game made no " << GroupKindName(kind) << " group for player " << num;
+  else LOG_AI(INFO) << "ai: " << GroupKindName(kind) << " group #" << id << " for player " << num;
+  return LuaGroup{ id, kind };
+}
+
+sol::table Group_Units(const LuaGroup& g, sol::this_state ts) {
+  sol::state_view L(ts);
+  sol::table out = L.create_table();
+  if (g.id < 0) return out;
+  ScGroup sg(g.id);
+  if (sg.GetImpl() == nullptr) return out;
+  int i = 0;
+  for (Unit u : sg) out[++i] = u;
+  return out;
+}
+
+void RegisterGroupBindings(sol::state& lua) {
+  sol::table ai = lua.create_named_table("ai");
+  ai.set_function("building_group", [](sol::object p) { return Ai_Create(p, GroupKind::Building); });
+  ai.set_function("fight_group",    [](sol::object p) { return Ai_Create(p, GroupKind::Fight); });
+  ai.set_function("mining_group",   [](sol::object p) { return Ai_Create(p, GroupKind::Mining); });
+  ai.set_function("unit_block",     &Ai_UnitBlock);
+  lua.new_usertype<LuaUnitBlock>("UnitBlock", sol::no_constructor);
+
+  lua.new_usertype<LuaGroup>(
+      "Group", sol::no_constructor,
+      "id",    sol::property([](const LuaGroup& g) { return g.id; }),
+      "kind",  sol::property([](const LuaGroup& g) { return std::string(GroupKindName(g.kind)); }),
+      "valid", sol::property([](const LuaGroup& g) { return g.id >= 0 && ScGroup(g.id).GetImpl() != nullptr; }),
+      "units", &Group_Units,
+      "unit_count", [](const LuaGroup& g) { return g.id >= 0 ? ScGroup(g.id).TotalUnitCount() : 0; },
+      // The first unit in the group of a type (and weapon or kit), or nil.
+      "first_of_type", [](const LuaGroup& g, const std::string& type, sol::object weapon, sol::this_state ts) -> sol::object {
+        sol::state_view L(ts);
+        if (g.id < 0) return sol::make_object(L, sol::lua_nil);
+        const MapID w = weapon.is<std::string>() ? MapIdFromName(weapon.as<std::string>()) : MapID::Any;
+        const Unit u = ScGroup(g.id).GetFirstOfType(MapIdFromName(type), w);
+        return u.IsLive() ? sol::make_object(L, u) : sol::make_object(L, sol::lua_nil); },
+      "take_unit",   [](LuaGroup& g, Unit u) { if (g.id >= 0 && u.IsValid()) ScGroup(g.id).TakeUnit(u); },
+      "remove_unit", [](LuaGroup& g, Unit u) { if (g.id >= 0 && u.IsValid()) ScGroup(g.id).RemoveUnit(u); },
+      // Makes the block's units for the group's player, into the group (while it has fewer than 32).
+      "add_units",   [](LuaGroup& g, const LuaUnitBlock& b) { if (g.id >= 0 && b.block) ScGroup(g.id).AddUnits(*b.block); },
+      "set_lights",  [](LuaGroup& g, bool on) { if (g.id >= 0) ScGroup(g.id).SetLights(on); },
+      "set_delete_when_empty", [](LuaGroup& g, bool on) { if (g.id >= 0) ScGroup(g.id).SetDeleteWhenEmpty(on); },
+      // How many of a unit (and weapon, nil for none) the group wants: its building group makes the rest.
+      "set_targ_count", [](LuaGroup& g, const std::string& type, sol::object weapon, int count) {
+        if (g.id >= 0) ScGroup(g.id).SetTargCount(MapIdFromName(type), WeaponOpt(weapon), count); },
+      "clear_targ_count", [](LuaGroup& g) { if (g.id >= 0) ScGroup(g.id).ClearTargCount(); },
+      "enable",  [](LuaGroup& g) { if (g.id >= 0) ScGroup(g.id).Enable(); },
+      "disable", [](LuaGroup& g) { if (g.id >= 0) ScGroup(g.id).Disable(); },
+      "destroy", [](LuaGroup& g) { if (g.id >= 0) { ScGroup(g.id).Destroy(); g.id = -1; } },
+
+      // ---- BuildingGroup: what it keeps standing, and whom it builds for ----
+      // set_rect: Building - where its ConVecs wait; Fight - where its units wait.
+      "set_rect", [](LuaGroup& g, sol::object area) {
+        if (g.id < 0) return;
+        if (g.kind == GroupKind::Building) BuildingGroup(g.id).SetRect(RectFrom(area));
+        else if (g.kind == GroupKind::Fight) FightGroup(g.id).SetRect(RectFrom(area));
+        else LOG_AI(WARNING) << "group:set_rect: needs a Building or Fight group"; },
+      // record_building(at, type [, kit or weapon] [, group]): a structure to keep standing; a factory's output
+      // goes to `group`.
+      "record_building", [](LuaGroup& g, sol::object at, const std::string& type, sol::object weapon, sol::object group) {
+        if (!GroupIs(g, GroupKind::Building, "record_building")) return;
+        BuildingGroup bg(g.id);
+        if (group.is<LuaGroup>()) bg.RecordBuilding(LocFrom(at), MapIdFromName(type), WeaponOpt(weapon), ScGroup(group.as<LuaGroup>().id));
+        else bg.RecordBuilding(LocFrom(at), MapIdFromName(type), WeaponOpt(weapon)); },
+      // record_unit_block(block [, group]): every structure of the block.
+      "record_unit_block", [](LuaGroup& g, const LuaUnitBlock& b, sol::object group) {
+        if (!GroupIs(g, GroupKind::Building, "record_unit_block") || !b.block) return;
+        BuildingGroup bg(g.id);
+        if (group.is<LuaGroup>()) bg.RecordUnitBlock(*b.block, ScGroup(group.as<LuaGroup>().id));
+        else bg.RecordUnitBlock(*b.block); },
+      "record_tube", [](LuaGroup& g, sol::object at) {
+        if (GroupIs(g, GroupKind::Building, "record_tube")) BuildingGroup(g.id).RecordTube(LocFrom(at)); },
+      // record_tubes_touching(at): the tubes joined to the one at `at`.
+      "record_tubes_touching", [](LuaGroup& g, sol::object at) {
+        if (GroupIs(g, GroupKind::Building, "record_tubes_touching")) BuildingGroup(g.id).RecordConnectTubes(LocFrom(at)); },
+      "record_wall", [](LuaGroup& g, sol::object at, sol::optional<std::string> type) {
+        if (GroupIs(g, GroupKind::Building, "record_wall"))
+          BuildingGroup(g.id).RecordWall(LocFrom(at), type ? MapIdFromName(*type) : MapID::Wall); },
+      // record_veh_reinforce_group(group, priority): build the vehicles `group` wants (higher priority first).
+      "record_veh_reinforce_group", [](LuaGroup& g, const LuaGroup& other, int priority) {
+        if (GroupIs(g, GroupKind::Building, "record_veh_reinforce_group") && other.id >= 0)
+          BuildingGroup(g.id).RecordVehReinforceGroup(ScGroup(other.id), priority); },
+      "unrecord_veh_group", [](LuaGroup& g, const LuaGroup& other) {
+        if (GroupIs(g, GroupKind::Building, "unrecord_veh_group") && other.id >= 0)
+          BuildingGroup(g.id).UnRecordVehGroup(ScGroup(other.id)); },
+
+      // ---- MiningGroup ----
+      // setup(mine, smelter, area) or setup(mine, smelter, mine_type, smelter_type, area): trucks between the
+      // structures at those tiles (or ones of those types to come), waiting in `area`.
+      "setup", [](LuaGroup& g, sol::object mine, sol::object smelter, sol::object a, sol::object b, sol::object c) {
+        if (!GroupIs(g, GroupKind::Mining, "setup")) return;
+        MiningGroup mg(g.id);
+        if (a.is<std::string>()) mg.Setup(LocFrom(mine), LocFrom(smelter), MapIdFromName(a.as<std::string>()),
+                                          MapIdFromName(b.as<std::string>()), RectFrom(c));
+        else if (mine.is<Unit>() && smelter.is<Unit>()) mg.Setup(mine.as<Unit>(), smelter.as<Unit>(), RectFrom(a));
+        else mg.Setup(LocFrom(mine), LocFrom(smelter), RectFrom(a)); },
+
+      // ---- FightGroup ----
+      "add_guarded_rect",    [](LuaGroup& g, sol::object area) {
+        if (GroupIs(g, GroupKind::Fight, "add_guarded_rect")) FightGroup(g.id).AddGuardedRect(RectFrom(area)); },
+      "clear_guarded_rects", [](LuaGroup& g) {
+        if (GroupIs(g, GroupKind::Fight, "clear_guarded_rects")) FightGroup(g.id).ClearGuardedRects(); },
+      "do_guard_rect",    [](LuaGroup& g) { if (GroupIs(g, GroupKind::Fight, "do_guard_rect")) FightGroup(g.id).DoGuardRect(); },
+      "do_patrol_only",   [](LuaGroup& g) { if (GroupIs(g, GroupKind::Fight, "do_patrol_only")) FightGroup(g.id).DoPatrolOnly(); },
+      "do_guard_group",   [](LuaGroup& g) { if (GroupIs(g, GroupKind::Fight, "do_guard_group")) FightGroup(g.id).DoGuardGroup(); },
+      "do_guard_unit",    [](LuaGroup& g) { if (GroupIs(g, GroupKind::Fight, "do_guard_unit")) FightGroup(g.id).DoGuardUnit(); },
+      "do_attack_enemy",  [](LuaGroup& g) { if (GroupIs(g, GroupKind::Fight, "do_attack_enemy")) FightGroup(g.id).DoAttackEnemy(); },
+      "do_attack_unit",   [](LuaGroup& g) { if (GroupIs(g, GroupKind::Fight, "do_attack_unit")) FightGroup(g.id).DoAttackUnit(); },
+      "do_exit_map",      [](LuaGroup& g) { if (GroupIs(g, GroupKind::Fight, "do_exit_map")) FightGroup(g.id).DoExitMap(); },
+      "set_attack_type",  [](LuaGroup& g, const std::string& type) {
+        if (GroupIs(g, GroupKind::Fight, "set_attack_type")) FightGroup(g.id).SetAttackType(MapIdFromName(type)); },
+      "set_target_group", [](LuaGroup& g, const LuaGroup& other) {
+        if (GroupIs(g, GroupKind::Fight, "set_target_group") && other.id >= 0) FightGroup(g.id).SetTargetGroup(ScGroup(other.id)); },
+      "set_target_unit",  [](LuaGroup& g, Unit u) {
+        if (GroupIs(g, GroupKind::Fight, "set_target_unit")) FightGroup(g.id).SetTargetUnit(u); },
+      "set_follow_mode",  [](LuaGroup& g, int mode) {
+        if (GroupIs(g, GroupKind::Fight, "set_follow_mode")) FightGroup(g.id).SetFollowMode(mode); },
+      "set_combine_fire", [](LuaGroup& g, sol::optional<bool> on) {
+        if (!GroupIs(g, GroupKind::Fight, "set_combine_fire")) return;
+        if (on.value_or(true)) FightGroup(g.id).SetCombineFire(); else FightGroup(g.id).ClearCombineFire(); },
+      sol::meta_function::equal_to, [](const LuaGroup& a, const LuaGroup& b) { return a.id == b.id; });
 }
 
 // When on, AI debug (log.ai) is also echoed to the in-game comms panel so a dev can watch the AI
@@ -830,6 +1076,10 @@ void RegisterBindings(sol::state& lua) {
       for (int x = r.x1; x <= r.x2; ++x)
         GameMap::SetLavaPossible(Location(x, y), v);
   });
+  // A tile's graphic: its index in the map's tile mappings (as a map editor shows it). The stock
+  // lava maps swap in volcano tiles before an eruption: game.set_tile({ 52, 4 }, 1147).
+  game.set_function("tile",     [](sol::object at) { return GameMap::GetTile(LocFrom(at)); });
+  game.set_function("set_tile", [](sol::object at, int index) { GameMap::SetTile(LocFrom(at), index); });
   game.set_function("map_sound", [](sol::object sound, sol::object at) {
     Game::AddMapSound(ResolveSound(sound, static_cast<Tethys::SoundID>(0)), LocFrom(at)); });
 
@@ -852,6 +1102,8 @@ void RegisterBindings(sol::state& lua) {
   trigger.set_function("operational",     &Trigger_Operational);
   trigger.set_function("vehicle_count",   &Trigger_VehicleCount);
   trigger.set_function("building_count",  &Trigger_BuildingCount);
+  trigger.set_function("time",            &Trigger_Time);
+  trigger.set_function("research",        &Trigger_Research);
   lua.new_usertype<Trigger>(
       "Trigger", sol::no_constructor,
       "id",        sol::property([](const Trigger& t) { return t.GetID(); }),
@@ -859,6 +1111,8 @@ void RegisterBindings(sol::state& lua) {
       "enabled",   sol::property([](const Trigger& t) { return t.IsValid() && t.IsEnabled() != 0; }),
       "enable",    [](Trigger& t) { if (t.IsValid()) t.Enable(); },
       "disable",   [](Trigger& t) { if (t.IsValid()) t.Disable(); },
+      // Ends the trigger (and forgets its function): a disaster's function ends the time trigger that fired.
+      "destroy",   [](Trigger& t) { if (t.IsValid()) { gTriggerFns.erase(t.GetID()); t.Destroy(); } },
       "has_fired", [](Trigger& t, sol::object player) { return t.IsValid() && t.HasFired(PlayerNumFrom(player)) != 0; },
       sol::meta_function::equal_to, [](const Trigger& a, const Trigger& b) { return a.GetID() == b.GetID(); });
 
@@ -994,6 +1248,12 @@ void RegisterBindings(sol::state& lua) {
                         const MapID t = MapIdFromName(type);
                         if (t != MapID::None) GuardedProduce(u, t, weapon ? MapIdFromName(*weapon) : MapID::None);
                         else LOG_MISSION(WARNING) << "produce: unknown type '" << type << "'"; },
+      // spaceport:develop(type) - build a rocket or its cargo at a Spaceport (e.g. "EMPMissile", "SolarSatellite").
+      "develop",      [](Unit& u, const std::string& type) {
+                        if (!u.IsLive()) return;
+                        const MapID t = MapIdFromName(type);
+                        if (t != MapID::None) GuardedDevelop(u, t);
+                        else LOG_MISSION(WARNING) << "develop: unknown type '" << type << "'"; },
       // factory:set_factory_cargo(bay, type [, cargoOrWeapon]) - preload a kit into a 1-based bay (1..6).
       "set_factory_cargo", [](Unit& u, int bay, const std::string& type, sol::optional<std::string> extra) {
                         if (u.IsLive()) u.SetFactoryCargo(bay - 1, MapIdFromName(type),
@@ -1023,7 +1283,7 @@ void RegisterBindings(sol::state& lua) {
       "is_offensive",       sol::property([](const Unit& u) { return u.IsOffensive(); }),
       "is_infected",        sol::property([](const Unit& u) { return u.IsInfected(); }),
       "disabled",           sol::property([](const Unit& u) { return u.IsDisabled(); }),
-      "busy",               sol::property([](const Unit& u) { return u.IsBusy(); }),
+      "busy",               sol::property([](const Unit& u) { return GameIsBusy(u); }),
       "is_emped",           sol::property([](const Unit& u) { return u.IsEMPed(); }),
 
       // ---- position & perception ----
@@ -1162,7 +1422,16 @@ void RegisterBindings(sol::state& lua) {
       "go_plymouth", [](LuaPlayer& p) { _Player(p.num).GoPlymouth(); },
       "go_human",    [](LuaPlayer& p) { _Player(p.num).GoHuman(); },
       "go_ai",       [](LuaPlayer& p) { _Player(p.num).GoAI(); },
+      // The group a computer player's new units join when no other takes them.
+      "set_default_group", [](LuaPlayer& p, const LuaGroup& g) { if (g.id >= 0) _Player(p.num).SetDefaultGroup(ScGroup(g.id)); },
+      // The player's default group as the game keeps it: the fight group it makes for each player at the start,
+      // unless a mission set another (GetDefaultGroup 0x4775C0). AutoDemo 2 sets its area and lights.
+      "default_group", [](const LuaPlayer& p) {
+                         const int id = _Player(p.num).GetDefaultGroup().GetID();
+                         return id >= 0 ? LuaGroup{ id, GroupKind::Fight } : LuaGroup{}; },
       "center_view", [](const LuaPlayer& p, sol::object loc) { _Player(p.num).CenterViewOn(LocFrom(loc)); });
+
+  RegisterGroupBindings(lua);
 
   lua.new_usertype<Region>(
       "Region", sol::no_constructor,

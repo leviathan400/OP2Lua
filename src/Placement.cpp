@@ -8,6 +8,7 @@
 #include "Placement.h"
 
 #include <algorithm>
+#include <climits>
 #include <filesystem>
 #include <string>
 #include <unordered_map>
@@ -121,6 +122,7 @@ MapID MapIdFromName(const std::string& name) {
       { "ESG", MapID::ESG },
       { "Stickyfoam", MapID::Stickyfoam },
       { "ThorsHammer", MapID::ThorsHammer },
+      { "EnergyCannon", MapID::EnergyCannon },
       { "Wreckage", MapID::Wreckage },
   };
   const auto it = kMap.find(name);
@@ -259,10 +261,15 @@ void RegisterAllPlayers(sol::table& luaPlayers) {
   }
 }
 
+void ApplyBeacons(sol::table& luaUnits, int fromAfter, int toAfter);
+
+// Each unit in order; after the n-th, the beacons with `after = n`.
 void ApplyUnits(sol::table& luaUnits) {
   sol::optional<sol::table> units = gPlacement["units"];
-  if (!units) return;
-  for (auto& kv : *units) {
+  int made = 0;
+  if (units) for (auto& kv : *units) {
+    if (made > 0) ApplyBeacons(luaUnits, made, made);
+    ++made;
     sol::table u = kv.second.as<sol::table>();
     const std::string typeName = Field<std::string>(u, "type", "");
     const MapID type = MapIdFromName(typeName);
@@ -314,13 +321,19 @@ void ApplyUnits(sol::table& luaUnits) {
     sol::optional<std::string> name = u["name"];
     if (name) luaUnits[*name] = unit;
   }
+  ApplyBeacons(luaUnits, std::max(made, 1), INT_MAX);
 }
 
-void ApplyBeacons(sol::table& luaUnits) {
+// The beacons whose `after` (how many of the placement's units are made before it; 0 when left out) is in
+// fromAfter..toAfter. A setup that makes a beacon between its units (Tutorial 3, between its Tokamak and the mine on
+// it) gets the same object ids so.
+void ApplyBeacons(sol::table& luaUnits, int fromAfter, int toAfter) {
   sol::optional<sol::table> beacons = gPlacement["beacons"];
   if (!beacons) return;
   for (auto& kv : *beacons) {
     sol::table b = kv.second.as<sol::table>();
+    const int after = Field<int>(b, "after", 0);
+    if (after < fromAfter || after > toAfter) continue;
     const MineType   mt = MineTypeFor(Field<std::string>(b, "type", "MiningBeacon"),
                                       Field<std::string>(b, "ore", "Random"));
     const OreYield   y  = YieldFromName(Field<std::string>(b, "yield", "Random"));
@@ -428,8 +441,8 @@ void Apply() {
 
   ApplyPlayers(L, luaPlayers);
   RegisterAllPlayers(luaPlayers);
-  ApplyBeacons(luaUnits);   // beacons are terrain - create them BEFORE units, so a mine building
-  ApplyUnits(luaUnits);     // placed on a beacon finds it (else CreateUnit faults on the missing beacon)
+  ApplyBeacons(luaUnits, 0, 0);   // beacons are terrain - create them BEFORE units, so a mine building
+  ApplyUnits(luaUnits);           // placed on a beacon finds it (else CreateUnit faults on the missing beacon)
   ApplyWalls();
   ApplyRegions(L, luaRegions);
   ApplyMarkers(L, luaMarkers);

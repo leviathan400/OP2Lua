@@ -131,6 +131,7 @@ as a raw integer SoundID.
 | `game.set_lava_speed(n)` / `game.set_blight_speed(n)` | Spread speeds. |
 | `game.set_lava_possible(area [, on])` | Mark tiles as lava-passable so an eruption's flow can reach them (carve a channel). `on` defaults to true. |
 | `game.tile(at)` / `game.set_tile(at, index)` | A tile's graphic, as its index in the map's tile mappings (what a map editor shows). The stock lava maps swap in volcano tiles before an eruption. |
+| `game.initial_set_tile(at, index)` / `game.set_cell_type(at, type)` | A setup's own map edits: a tile set as the map loads (`GameMap::InitialSetTile`), and a tile's cell type (the game's `CellType` number). Tutorial 5 uses both. |
 | `game.disasters_enabled()` | Whether disasters are enabled for this game. Returns **false** in Colony Games (no disasters toggle there - only Difficulty), so a colony mission that wants disasters must call them directly / force its director. Reflects the host's real choice in multiplayer/skirmish. |
 | `game.set_daylight_everywhere(on)` / `game.set_daylight_moves(on)` | Full daylight / day-night cycle. |
 | `game.set_initial_light_level(position)` | Where the day/night band starts, as the stock missions set it (e.g. `-32`); with `set_daylight_moves(false)` it stays there. |

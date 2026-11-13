@@ -174,6 +174,7 @@ return {
   },
 
   beacons = { { type="MiningBeacon", ore="Common", yield="Random", at={88,42} } },
+                                       -- after=n: made once n of the units above are made (else first)
   walls   = { },                       -- { type="Tube"|"Wall"|..., at={x,y} }
   regions = { spawn_point={93,39}, your_base={40,55} },   -- name -> point or rect
   markers = { },                       -- name -> { type=..., at={x,y} }

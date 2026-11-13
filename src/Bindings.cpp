@@ -1080,6 +1080,11 @@ void RegisterBindings(sol::state& lua) {
   // lava maps swap in volcano tiles before an eruption: game.set_tile({ 52, 4 }, 1147).
   game.set_function("tile",     [](sol::object at) { return GameMap::GetTile(LocFrom(at)); });
   game.set_function("set_tile", [](sol::object at, int index) { GameMap::SetTile(LocFrom(at), index); });
+  // A setup's own map edits (Tutorial 5's): a tile set as the map loads, and a tile's cell type (the game's
+  // CellType number: what moves over it and what can be built on it).
+  game.set_function("initial_set_tile", [](sol::object at, int index) { GameMap::InitialSetTile(LocFrom(at), index); });
+  game.set_function("set_cell_type", [](sol::object at, int type) {
+    GameMap::SetCellType(LocFrom(at), static_cast<Tethys::CellType>(type)); });
   game.set_function("map_sound", [](sol::object sound, sol::object at) {
     Game::AddMapSound(ResolveSound(sound, static_cast<Tethys::SoundID>(0)), LocFrom(at)); });
 

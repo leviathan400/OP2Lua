@@ -49,6 +49,8 @@ const std::vector<std::pair<const char*, MapID>>& MapIdTable() {
       { "Microwave", MapID::Microwave }, { "RailGun", MapID::RailGun }, { "RPG", MapID::RPG },
       { "Starflare", MapID::Starflare }, { "Supernova", MapID::Supernova },
       { "ESG", MapID::ESG }, { "Stickyfoam", MapID::Stickyfoam }, { "ThorsHammer", MapID::ThorsHammer },
+      // The Scorpion's weapon ('SCORPION_WEAPON').
+      { "EnergyCannon", MapID::EnergyCannon },
       { "Wreckage", MapID::Wreckage },
       // A Spaceport's EMP missile ('EMP_MISSILE'), for unit:produce on a Spaceport and unit:launch.
       { "EMPMissile", MapID::EMPMissile },

@@ -1,7 +1,7 @@
 # OP2Lua Mission File Format
 
 The files an OP2Lua mission is made of, what OP2LuaCore reads from each, and in what order. This is the reference
-for `<Mission>.placement.lua`; the functions a mission script calls are in [API.md](API.md). As of v0.8.9.
+for `<Mission>.placement.lua`; the functions a mission script calls are in [API.md](API.md). As of v0.8.10.
 
 ## The files
 
@@ -391,7 +391,7 @@ mission DLL's file name) comes the u32 size of the region, then the region. All 
 |---|---|
 | 8 bytes | `OP2LuaSv` |
 | u32 | format: 1 |
-| string | the OP2Lua version that saved (e.g. `0.8.9`) |
+| string | the OP2Lua version that saved (e.g. `0.8.10`) |
 | string | the mission: its DLL's name without `.dll` (letters, digits, `-`, `_`) |
 | u8 | 0: no script was running; 1: the script's state follows; 2: the state couldn't be saved, and a string says why |
 

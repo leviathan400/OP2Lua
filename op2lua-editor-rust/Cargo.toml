@@ -1,6 +1,6 @@
 [package]
 name = "op2luaeditor"
-version = "0.8.9"
+version = "0.8.10"
 edition = "2024"
 rust-version = "1.99"
 description = "A mission layout editor for OP2Lua and Outpost 2"

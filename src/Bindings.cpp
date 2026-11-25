@@ -504,12 +504,21 @@ int PlayerOpt(const sol::table& o) {
   sol::object p = o.get<sol::object>("player");
   return (p.valid() && p != sol::lua_nil) ? PlayerNumFrom(p) : static_cast<int>(Tethys::AllPlayers);
 }
+// Whether a trigger's `player` is a number the game can't take: past its players, or below 0 but not every player.
+// The game's checks index its player records with it, so the caller makes no trigger; a warning names it.
+bool BadTriggerPlayer(const sol::table& o, const char* what) {
+  const int num = PlayerOpt(o);
+  if ((num == static_cast<int>(Tethys::AllPlayers)) || ValidPlayerNum(num)) return false;
+  LOG_MISSION(WARNING) << "trigger." << what << ": needs a player (1-7 or a Player)";
+  return true;
+}
 bool OneShot(const sol::table& o, bool dflt) { return o.get_or("one_shot", dflt); }
 bool Enabled(const sol::table& o)            { return o.get_or("enabled", true); }
 
 // trigger.count{ type=, cargo=, compare=">=", count=1, player= } - how many units of a type a player (or any
 // player) has; `cargo` narrows it (a ConVec's kit, a weapon; any if left out). Space Race: type="IonDriveModule".
 Trigger Trigger_Count(sol::table o) {
+  if (BadTriggerPlayer(o, "count")) return Trigger();
   const MapID type = MapIdFromName(o.get_or("type", std::string()));
   // `cargo` may be a number, passed to the game as it is: a stock mission's raw value (Eden 1 counts Cargo Trucks
   // carrying truck cargo 1, food, and 4, Common Metal).
@@ -524,6 +533,7 @@ Trigger Trigger_Count(sol::table o) {
 // trigger.resource{ resource=, compare=">=", amount=, player= } - resource: "Food" / "CommonOre" / "RareOre" /
 // "Kids" / "Workers" / "Scientists" / "Colonists" / "Ore".
 Trigger Trigger_Resource(sol::table o) {
+  if (BadTriggerPlayer(o, "resource")) return Trigger();
   static const std::map<std::string, TriggerResource> names = {
       {"Food", TriggerResource::Food}, {"CommonOre", TriggerResource::CommonOre}, {"RareOre", TriggerResource::RareOre},
       {"Kids", TriggerResource::Kids}, {"Workers", TriggerResource::Workers},
@@ -587,6 +597,7 @@ Trigger Trigger_Time(sol::table o) {
 }
 // trigger.research{ tech=, player= } - a player (or any player) has researched the topic `tech` (its id).
 Trigger Trigger_Research(sol::table o) {
+  if (BadTriggerPlayer(o, "research")) return Trigger();
   const int tech = o.get_or("tech", 0);
   if (!IsValidTechId(tech)) {
     ReportBadTech("trigger.research", tech);
@@ -603,6 +614,7 @@ Trigger Trigger_OnePlayerLeft(sol::table o) {
 // trigger.operational{ type=, compare=">=", count=1, player= } - a player's working structures of a type (a
 // player is needed: the game misjudges "any player"). Land Rush: a Command Center up.
 Trigger Trigger_Operational(sol::table o) {
+  if (BadTriggerPlayer(o, "operational")) return Trigger();
   const int player = PlayerOpt(o);
   if (player == static_cast<int>(Tethys::AllPlayers)) {
     LOG_MISSION(WARNING) << "trigger.operational: needs a player";
@@ -615,6 +627,7 @@ Trigger Trigger_Operational(sol::table o) {
 }
 // trigger.vehicle_count{ compare=, count=, player= } - all of a player's vehicles, every type.
 Trigger Trigger_VehicleCount(sol::table o) {
+  if (BadTriggerPlayer(o, "vehicle_count")) return Trigger();
   return Remember(Tethys::TethysAPI::CreateVehicleCountTrigger(CompareFrom(o, ">="), o.get_or("count", 1),
                                                                TriggerFnName(o), PlayerOpt(o), OneShot(o, false), Enabled(o)),
                   o, "vehicle_count");
@@ -627,6 +640,7 @@ Trigger Trigger_VehicleCount(sol::table o) {
 // trigger.escape{ at=, width=, height=, type=, count=1, cargo=-1, amount=-1, player= } - at least `count` units of a
 // type (with truck cargo and amount) in the rectangle: the campaign's evacuations (Eden 1's trucks of food at 50,45).
 Trigger Trigger_Escape(sol::table o) {
+  if (BadTriggerPlayer(o, "escape")) return Trigger();
   const Location at = LocFrom(o.get<sol::object>("at"));
   const MapID type = MapIdFromName(o.get_or("type", std::string()));
   using Fn = Trigger FASTCALL(Tethys::ibool, Tethys::ibool, int, int, int, int, int, int, MapID, int, int, const char*);
@@ -635,16 +649,25 @@ Trigger Trigger_Escape(sol::table o) {
                                                  o.get_or("cargo", -1), o.get_or("amount", -1), TriggerFnName(o)),
                   o, "escape");
 }
-// trigger.kit{ type=, count=1, player= } - ConVecs carrying at least `count` kits of a structure (Eden 1's six kits).
+// trigger.kit{ type=, count=1, player= } - a player's ConVecs carrying at least `count` kits of a structure
+// (Eden 1's six kits). `player` is needed.
 Trigger Trigger_Kit(sol::table o) {
+  if (BadTriggerPlayer(o, "kit")) return Trigger();
+  // For all players the game faults at its next check of the trigger (PlayerUnitEnum::GetNext, 0x47A5EE).
+  const int player = PlayerOpt(o);
+  if (player == static_cast<int>(Tethys::AllPlayers)) {
+    LOG_MISSION(WARNING) << "trigger.kit: needs a player";
+    return Trigger();
+  }
   const MapID type = MapIdFromName(o.get_or("type", std::string()));
   using Fn = Trigger FASTCALL(Tethys::ibool, Tethys::ibool, int, MapID, int, const char*);
-  return Remember(Tethys::OP2Thunk<0x4791C0, Fn>(Enabled(o), OneShot(o, false), PlayerOpt(o), type, o.get_or("count", 1),
+  return Remember(Tethys::OP2Thunk<0x4791C0, Fn>(Enabled(o), OneShot(o, false), player, type, o.get_or("count", 1),
                                                  TriggerFnName(o)),
                   o, "kit");
 }
 // trigger.evac{ player= } - the game's evacuation trigger (CreateEvacTrigger, Eden 2's evacuation objective).
 Trigger Trigger_Evac(sol::table o) {
+  if (BadTriggerPlayer(o, "evac")) return Trigger();
   using Fn = Trigger FASTCALL(Tethys::ibool, Tethys::ibool, int, const char*);
   return Remember(Tethys::OP2Thunk<0x479260, Fn>(Enabled(o), OneShot(o, false), PlayerOpt(o), TriggerFnName(o)), o, "evac");
 }
@@ -662,6 +685,7 @@ Trigger Trigger_SpecialTarget(sol::table o) {
 }
 // trigger.point{ at=, player= } - a vehicle of the player on the tile.
 Trigger Trigger_Point(sol::table o) {
+  if (BadTriggerPlayer(o, "point")) return Trigger();
   const Location at = LocFrom(o.get<sol::object>("at"));
   using Fn = Trigger FASTCALL(Tethys::ibool, Tethys::ibool, int, int, int, const char*);
   return Remember(Tethys::OP2Thunk<0x479070, Fn>(Enabled(o), OneShot(o, false), PlayerOpt(o), at.x, at.y, TriggerFnName(o)),
@@ -669,6 +693,7 @@ Trigger Trigger_Point(sol::table o) {
 }
 // trigger.rect{ at=, width=, height=, player= } - a vehicle of the player in the rectangle from `at`.
 Trigger Trigger_Rect(sol::table o) {
+  if (BadTriggerPlayer(o, "rect")) return Trigger();
   const Location at = LocFrom(o.get<sol::object>("at"));
   using Fn = Trigger FASTCALL(Tethys::ibool, Tethys::ibool, int, int, int, int, int, const char*);
   return Remember(Tethys::OP2Thunk<0x478FC0, Fn>(Enabled(o), OneShot(o, false), PlayerOpt(o), at.x, at.y,
@@ -677,6 +702,7 @@ Trigger Trigger_Rect(sol::table o) {
 }
 // trigger.building_count{ compare=, count=, player= } - all of a player's structures, every type.
 Trigger Trigger_BuildingCount(sol::table o) {
+  if (BadTriggerPlayer(o, "building_count")) return Trigger();
   return Remember(Tethys::TethysAPI::CreateBuildingCountTrigger(CompareFrom(o, ">="), o.get_or("count", 1),
                                                                 TriggerFnName(o), PlayerOpt(o), OneShot(o, false), Enabled(o)),
                   o, "building_count");
@@ -1368,7 +1394,7 @@ LuaUnitBlock Ai_UnitBlock(sol::table list) {
 
 LuaGroup Ai_Create(const sol::object& player, GroupKind kind) {
   const int num = PlayerNumFrom(player);
-  if (num < 0) { LOG_AI(WARNING) << "ai: a group needs a player"; return LuaGroup{}; }
+  if (!ValidPlayerNum(num)) { LOG_AI(WARNING) << "ai: a group needs a player (1-7 or a Player)"; return LuaGroup{}; }
   int id = -1;
   switch (kind) {
     case GroupKind::Building: id = Tethys::TethysAPI::CreateBuildingGroup(_Player(num)).GetID(); break;
@@ -1418,7 +1444,7 @@ void RegisterGroupBindings(sol::state& lua) {
   // made (0 without a player). Lights default to off.
   lua.new_usertype<LuaUnitBlock>("UnitBlock", sol::no_constructor,
       "create_units", [](const LuaUnitBlock& b, sol::object player, sol::optional<bool> lights) {
-        const int num = PlayerNumFrom(player);
+        const int num = PlayerArg(player, "create_units");
         return (b.block && num >= 0) ? b.block->CreateUnits(num, lights.value_or(false)) : 0; });
 
   lua.new_usertype<LuaGroup>(
@@ -2207,10 +2233,10 @@ void RegisterBindings(sol::state& lua) {
       // do_transfer(player): the game's own Unit::DoTransfer (0x476AF0), as a stock mission calls it (Eden 4's tanks
       // and Scouts going over): the unit changes hands at once. transfer(player) goes through Tethys's DoTransfer,
       // SEH-guarded.
-      "do_transfer",   [](Unit& u, sol::object player) { const int p = PlayerNumFrom(player);
+      "do_transfer",   [](Unit& u, sol::object player) { const int p = PlayerArg(player, "do_transfer");
                          if (u.IsLive() && p >= 0) { using Fn = void(__thiscall*)(Unit*, int);
                                                      reinterpret_cast<Fn>(0x476AF0)(&u, p); } },
-      "transfer",      [](Unit& u, sol::object player) { const int p = PlayerNumFrom(player);
+      "transfer",      [](Unit& u, sol::object player) { const int p = PlayerArg(player, "transfer");
                          if (u.IsLive() && p >= 0) GuardedTransfer(u, p); },
 
       // ---- combat positioning ----
@@ -2405,10 +2431,10 @@ void RegisterBindings(sol::state& lua) {
 
       // ---- alliances ----
       "is_ally",            [](const LuaPlayer& p, sol::object o) { const int n = PlayerNumFrom(o);
-                              return (n >= 0) && _Player(p.num).IsAlly(n); },
-      "ally_with",          [](LuaPlayer& p, sol::object o) { const int n = PlayerNumFrom(o);
+                              return ValidPlayerNum(n) && _Player(p.num).IsAlly(n); },
+      "ally_with",          [](LuaPlayer& p, sol::object o) { const int n = PlayerArg(o, "ally_with");
                               if (n >= 0) _Player(p.num).AllyWith(n); },
-      "mutually_ally_with", [](LuaPlayer& p, sol::object o) { const int n = PlayerNumFrom(o);
+      "mutually_ally_with", [](LuaPlayer& p, sol::object o) { const int n = PlayerArg(o, "mutually_ally_with");
                               if (n >= 0) _Player(p.num).MutuallyAllyWith(n); },
 
       // ---- the game's own checks of what the colony can still do. The game caches the answers in its own player

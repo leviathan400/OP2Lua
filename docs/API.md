@@ -264,7 +264,7 @@ number, and left out means any player.
 | `trigger.vehicle_count{compare=, count=1, player=}` | A player's vehicles, all types. |
 | `trigger.building_count{compare=, count=1, player=}` | A player's structures, all types. |
 | `trigger.escape{at=, width=1, height=1, type=, count=1, cargo=-1, amount=-1, player=}` | At least `count` units of `type` (with a truck cargo and amount) in the rectangle from `at`: the campaign's evacuations. |
-| `trigger.kit{type=, count=1, player=}` | ConVecs carrying at least `count` kits of a structure. |
+| `trigger.kit{type=, count=1, player=}` | A player's ConVecs carrying at least `count` kits of a structure (`player` needed). |
 | `trigger.point{at=, player=}` / `trigger.rect{at=, width=1, height=1, player=}` | A vehicle of the player on the tile / in the rectangle. |
 | `trigger.evac{player=}` | The game's evacuation objective (enough Evacuation Transports). |
 | `trigger.damaged{group=, damage=1}` | A share of a fight group destroyed: 1 all, 2 three quarters, 3 half. |

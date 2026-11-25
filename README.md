@@ -1,5 +1,7 @@
 # OP2Lua
 
+[![Build](https://github.com/leviathan400/OP2Lua/actions/workflows/build.yml/badge.svg)](https://github.com/leviathan400/OP2Lua/actions/workflows/build.yml)
+
 Write Outpost 2 missions in Lua - no compiler, no DLL authoring.
 
 OP2Lua lets you build a mission for *Outpost 2* from two plain

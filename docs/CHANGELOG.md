@@ -44,7 +44,7 @@ Saves made with 0.8.10 load and carry on.
 ### Fixed
 
 - Calls that take a player check it is one (1-7 or a Player) before it reaches the game's player table (PR #4, by
-  David Burke). Given a number past the seven players, or Lua's -1, `player:ally_with`, `mutually_ally_with` and
+  bufke). Given a number past the seven players, or Lua's -1, `player:ally_with`, `mutually_ally_with` and
   `is_ally`, `unit:transfer` and `do_transfer`, `block:create_units`, the `ai.*_group` calls and the triggers that
   take a `player` could crash the game or change memory past the table. They now warn in the Mission log (the `ai`
   calls in the AI log) and do nothing: `create_units` returns 0, no group or trigger is made, and `is_ally` returns

@@ -56,6 +56,9 @@ void ResetTriggers();
 void SaveBindingsState(Persist::Writer& w);
 bool RestoreBindingsState(Persist::Reader& r, std::string& err);
 void ResetObjectives();
+// A load that stops the script: every victory and failure condition still points where its text was in the game
+// that saved; LoseObjectiveTexts points them all at one text that says so.
+void LoseObjectiveTexts();
 void PushTriggerFunctions(lua_State* L);
 void SetTriggerFunctions(lua_State* L, int idx);
 

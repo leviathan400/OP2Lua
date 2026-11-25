@@ -1,7 +1,7 @@
 # OP2Lua Mission File Format
 
 The files an OP2Lua mission is made of, what OP2LuaCore reads from each, and in what order. This is the reference
-for `<Mission>.placement.lua`; the functions a mission script calls are in [API.md](API.md). As of v0.8.10.
+for `<Mission>.placement.lua`; the functions a mission script calls are in [API.md](API.md). As of v0.8.12.
 
 ## The files
 
@@ -357,6 +357,12 @@ after the save's tick.
 **Older saves**: a game saved before OP2Lua 0.8.8 holds no script state. It loads (units, map, triggers as the game
 saved them) with the mission's script stopped, and says so; to play the mission with its script, start it again.
 
+**A load that stops the script** (a changed script, an older save, a state that couldn't be saved) tells the player:
+the message pane shows `GAME LOAD MISSION FAIL` and a line saying why, on the first tick and again 75 ticks later,
+with the sound of an incoming chat line.
+The mission's objectives then read *Objective unknown: the mission's script is stopped*: their texts were the
+script's. A game saved again after that, and loaded later, reads the same. A mission that shows its own message on a good load (from `on_load_save`) needs nothing for this.
+
 **Tables in a loaded game** are new tables with the same contents. A loop over a table with `pairs` may visit its
 keys in another order after a load than in the game that saved; a script that needs an order uses an array
 (`ipairs`, `#`) or sorts.
@@ -391,7 +397,7 @@ mission DLL's file name) comes the u32 size of the region, then the region. All 
 |---|---|
 | 8 bytes | `OP2LuaSv` |
 | u32 | format: 1 |
-| string | the OP2Lua version that saved (e.g. `0.8.10`) |
+| string | the OP2Lua version that saved (e.g. `0.8.12`) |
 | string | the mission: its DLL's name without `.dll` (letters, digits, `-`, `_`) |
 | u8 | 0: no script was running; 1: the script's state follows; 2: the state couldn't be saved, and a string says why |
 

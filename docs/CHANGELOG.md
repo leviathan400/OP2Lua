@@ -3,6 +3,42 @@
 All notable changes to OP2Lua (the engine: `OP2LuaCore.dll`, the mission stub, the editor and tools).
 For the author-facing SDK, see the OP2LuaSDK changelog.
 
+## [0.8.12] - 2026-11-25
+
+### Changed
+
+- After a load that stops the mission's script, the second `GAME LOAD MISSION FAIL` comes 75 ticks after the first
+  (was 100) and plays the sound of an incoming chat line, so the player notices it.
+
+### Fixed
+
+- A game saved again after a load that stopped its script, and loaded later, also reads "Objective unknown" for its
+  objectives. Their texts pointed at the previous game's copy of OP2Lua, which may sit elsewhere after a reboot.
+
+### Docs
+
+- API.md: what a `player` argument takes (a Player or 1-7; anything else warns and does nothing), how triggers take
+  `player`, and what the player sees after a failed load.
+
+Saves made with 0.8.11 load and carry on.
+
+## [0.8.11] - 2026-11-25
+
+### Changed
+
+- A load that stops the mission's script says so more clearly: the message pane shows `GAME LOAD MISSION FAIL`,
+  then the line saying why (e.g. "OP2Lua: saved with another version of this mission: its script is stopped."),
+  on the first tick and again a mark (100 ticks) later. A save made with no script running isn't a failure and
+  shows neither.
+
+### Fixed
+
+- After a load that stops the script, the mission's objectives read "Objective unknown: the mission's script is
+  stopped". Their texts belonged to the script that saved, and the game still pointed at them, so reading them
+  (the Mission Objectives list) could show garbage or crash the game.
+
+Saves made with 0.8.10 load and carry on.
+
 ## [0.8.10] - 2026-11-25
 
 ### Fixed

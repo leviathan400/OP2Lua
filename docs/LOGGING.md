@@ -206,14 +206,17 @@ A saved game keeps the mission's script (0.8.8; FILE-FORMAT.md, *Saved games*). 
 After `the script carries on`, the script's own lines go on from the saved tick, and `on_load_save` runs on the first
 tick. A load starts a new section of the Mission log, with the usual header line.
 
-When the script can't carry on, the line says why (for the first three the player also gets a message in the game):
+When the script can't carry on, the line says why. The player gets a message too: at the save, one line; at a load
+that stops the script (the second and third rows), `GAME LOAD MISSION FAIL` and a line saying why, on the first
+tick and again 75 ticks later (with the chat line sound).
 
 | Mission log | What happened |
 |---|---|
 | `[ERROR] saved game: the script's state can't be saved: <why> (at G.words.iterator). The game is saved without it; loading it stops the mission's script.` | At the save: the script held a value a save can't keep. `at` names it from the globals (`G`): here the global `words`, its field `iterator`. The game is still saved. |
 | `[ERROR] saved game: the script's state couldn't be put back: <why>. The mission's script doesn't run in this game.` | At the load. `<why>` is e.g. *the save was made with another version of the mission script* (the `.lua` changed since the save), or the reason the save gave when it couldn't keep the state. |
 | `[WARN] saved game: saved before OP2Lua kept a mission's script state in the save (0.8.8); the mission's script doesn't run in this game` | A save made with OP2Lua 0.8.7 or older. |
-| `[WARN] saved game: no script was running when it was saved` | The script had failed to load in the game that saved. |
+| `[WARN] saved game: no script was running when it was saved` | The script had failed to load in the game that saved. No message for the player. |
+| `[INFO] saved game: 2 victory/failure conditions lost their text` | After a load that stops the script, or of a game saved with none running: the objectives' texts were the script's, so they now read *Objective unknown: the mission's script is stopped*. |
 
 The Main log notes once per game session whether saved games keep the script:
 `saved games: hooks installed (a Lua mission's script state goes in the save)`, or a warning that this Outpost2.exe

@@ -60,7 +60,15 @@ std::string gBase;  // the running mission DLL's name without .dll (its log and 
 bool gPrepared = false;       // the logs point at the mission DLL the game loaded last (GetSaveRegions)
 bool gStarted = false;        // the script has run for this mission DLL (InitProc, or a saved game's restore)
 bool gLoadedSave = false;     // a saved game was put back; its first tick calls on_load_save
-std::string gLoadNotice;      // a message for the player on the first tick after a load
+std::string gLoadNotice;      // why a loaded game's script is stopped, for the player (NoticeAfterLoad)
+int gLoadNoticeRepeat = -1;   // the tick to post gLoadNotice again, or -1
+constexpr const char* kLoadFailTitle = "GAME LOAD MISSION FAIL";
+constexpr int kLoadNoticeRepeatTicks = 75;
+
+void ClearLoadNotice() {
+  gLoadNotice.clear();
+  gLoadNoticeRepeat = -1;
+}
 
 void LogCbError(const char* cb, const std::string& what) {
   // A script error is a mission event - send it to the mission log, not the framework Main log.
@@ -312,7 +320,7 @@ void PrepareMission(const std::string& dir, const std::string& base) {
   gEnded = false;
   gStarted = false;
   gLoadedSave = false;
-  gLoadNotice.clear();
+  ClearLoadNotice();
   static const bool atExitSet = (std::atexit(FinishAtExit), true);   // after the crash reporter's: runs before it
   (void)atExitSet;
 
@@ -369,6 +377,7 @@ void ResolveCallbacks() {
 void StartScript() {
   if (gStarted) return;
   gStarted = true;
+  ClearLoadNotice();
   NewState();
   const std::string missionLua = MissionLuaPath();
   if (!LuaHost::Get().RunFile(missionLua)) return;  // RunFile reports load errors
@@ -417,9 +426,14 @@ bool Protected(F& body, std::string& err) {
   return ctx.ok;
 }
 
-// Shows a message on the first tick after a load, when the game is running again. The game's message pane cuts a
-// message off after about 90 characters, so these are short; the Mission log has the whole reason.
-void NoticeAfterLoad(const std::string& text) { gLoadNotice = text; }
+// Tells the player a loaded game's script is stopped, on the first tick after the load (the game is running again)
+// and once more 75 ticks later: kLoadFailTitle, then the reason. The second title plays a chat line's sound (message2,
+// as the game posts an incoming chat line, 0x40FE14) so the player notices it. The game's message pane cuts a message
+// off after about 90 characters, so the reasons are short; the Mission log has the whole one.
+void NoticeAfterLoad(const std::string& text) {
+  gLoadNotice = text;
+  gLoadNoticeRepeat = -1;
+}
 }  // namespace
 
 // What the state byte after the header says.
@@ -490,6 +504,7 @@ void RestoreSave(const char* data, size_t size) {
                         ? "OP2Lua: saved with another OP2Lua version: the mission's script is stopped."
                         : "OP2Lua: this save's mission script couldn't carry on. See the OP2Lua log.");
     Reset();
+    LoseObjectiveTexts();
   };
   if (!r.Ok() || std::memcmp(magic, kSaveMagic, sizeof magic) != 0) { fail("its data isn't OP2Lua's"); return; }
   if (format != kSaveFormat) { fail("it was saved by OP2Lua " + version + ", in a format this OP2Lua doesn't read"); return; }
@@ -498,7 +513,10 @@ void RestoreSave(const char* data, size_t size) {
                     << "), saved by OP2Lua " << version;
   if (saved == kScriptNotKept) { fail("its state couldn't be saved: " + r.Str()); return; }
   if (saved != kScriptState) {
+    // Saved after the script stopped (a failed load, say): the conditions' texts point where they were in the game
+    // that saved, which may be nowhere now.
     Reset();
+    LoseObjectiveTexts();
     LOG_MISSION(WARNING) << "saved game: no script was running when it was saved";
     return;
   }
@@ -526,6 +544,7 @@ void LoadedWithoutState() {
   if (LoadedMissionDll(dir, base)) PrepareMission(dir, base);
   gStarted = true;
   Reset();
+  LoseObjectiveTexts();
   LOG_MISSION(WARNING) << "saved game: saved before OP2Lua kept a mission's script state in the save (0.8.8); the "
                           "mission's script doesn't run in this game";
   NoticeAfterLoad("OP2Lua: saved before OP2Lua 0.8.8: the mission's script is stopped.");
@@ -629,9 +648,12 @@ OP2LUACORE_API int OP2LuaCore_InitProc(void) {
 }
 
 OP2LUACORE_API void OP2LuaCore_AIProc(void) {
-  if (!gLoadNotice.empty()) {
+  if (!gLoadNotice.empty() && (gLoadNoticeRepeat < 0 || Game::Tick() >= gLoadNoticeRepeat)) {
+    const bool second = (gLoadNoticeRepeat >= 0);
+    Game::AddMessage(kLoadFailTitle, second ? Tethys::SoundID::Message2 : static_cast<Tethys::SoundID>(0));
     Game::AddMessage(gLoadNotice, static_cast<Tethys::SoundID>(0));
-    gLoadNotice.clear();
+    if (gLoadNoticeRepeat < 0) gLoadNoticeRepeat = Game::Tick() + kLoadNoticeRepeatTicks;
+    else ClearLoadNotice();
   }
   if (gLoadedSave) {
     gLoadedSave = false;

@@ -304,7 +304,7 @@ void Game_Sound(sol::object sound, sol::optional<int> toPlayer) {
 int Game_Rand(int n) { return (n >= 0) ? Game::GetRand(n) : 0; }
 int Game_Tick()      { return Game::Tick(); }
 
-// game.version() -> "0.8.10", "2026-11-17 11:57:19": the running OP2LuaCore's version and when its DLL was built.
+// game.version() -> "0.8.12", "2026-11-17 11:57:19": the running OP2LuaCore's version and when its DLL was built.
 std::tuple<std::string, std::string> Game_Version() { return { OP2LUA_VERSION, ::OP2Lua::Mission::BuildTime() }; }
 
 // game.op2_version() -> the version the running Outpost 2 goes by (TApp::Version: "1.4.0.1" under OPU 1.4.x), and
@@ -1703,6 +1703,23 @@ bool RestoreBindingsState(Persist::Reader& r, std::string& err) {
 }
 
 void ResetObjectives() { gObjectives.clear(); }
+
+void LoseObjectiveTexts() {
+  constexpr uintptr_t kVictoryConditionVtbl = 0x4D68C0;   // set by 0x495802
+  constexpr uintptr_t kFailureConditionVtbl = 0x4D68F0;   // set by 0x495A52
+  static const char kLost[] = "Objective unknown: the mission's script is stopped";
+  gObjectives.clear();
+  int n = 0;
+  for (int i = 0; i < static_cast<int>(Tethys::ScStubList::MaxNumScStubs); ++i) {
+    Tethys::ScBase* stub = Tethys::ScBase::GetInstance(i);
+    if (stub == nullptr || IsBadReadPtr(stub, 0x34)) continue;
+    const uintptr_t vtbl = *reinterpret_cast<uintptr_t*>(stub);
+    if (vtbl != kVictoryConditionVtbl && vtbl != kFailureConditionVtbl) continue;
+    *reinterpret_cast<const char**>(reinterpret_cast<char*>(stub) + 0x30) = kLost;
+    ++n;
+  }
+  if (n > 0) LOG_MISSION(INFO) << "saved game: " << n << " victory/failure conditions lost their text";
+}
 
 void PushTriggerFunctions(lua_State* L) {
   lua_createtable(L, 0, static_cast<int>(gTriggerFns.size()));

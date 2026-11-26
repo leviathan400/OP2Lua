@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, RichText};
 use op2_formats::GameFiles;
+use op2_formats::mission::MissionDll;
 
 use crate::celltype::{self, RenderMode};
 use crate::editor::{Editor, Tool};
@@ -72,6 +73,8 @@ struct PropsDialog {
     original: Option<Props>,
     overwrite: bool,
     error: Option<String>,
+    /// Where the mission's DLL differs from these properties (OK writes them into it).
+    note: Option<String>,
 }
 
 /// The whole application's state.
@@ -253,6 +256,9 @@ impl EditorApp {
                     m.regions.len(),
                     m.map_name
                 );
+                if let Some(note) = props::dll_note(&m.placement_path, &m.loaded_text) {
+                    self.status += &format!(" {note}");
+                }
                 self.settings.last_mission = Some(m.placement_path.clone());
                 self.settings.last_map = None;
                 self.mission = Some(m);
@@ -314,7 +320,14 @@ impl EditorApp {
         let Some(m) = &mut self.mission else { return false };
         match m.save() {
             Ok(summary) => {
-                self.status = summary;
+                // The DLL is built from the placement's header each time, so it holds what the editor shows.
+                match props::save_dll(&m.placement_path, &m.loaded_text) {
+                    Ok(dll) => self.status = format!("{summary} {dll}"),
+                    Err(e) => {
+                        self.status = summary;
+                        self.message = Some(("Save mission".into(), format!("The placement was saved, but: {e}")));
+                    }
+                }
                 true
             }
             Err(e) => {
@@ -335,6 +348,15 @@ impl EditorApp {
         }
         if let Some(path) = dialog.save_file() {
             m.placement_path = crate::mission::placement_for(&path);
+            // The mission's logic comes along under the new name, so the copy is a whole mission with its DLL.
+            let script = m.placement_path.with_file_name(format!("{}.lua", crate::mission::base_name(&m.placement_path)));
+            if let Some(old) = m.script_path.clone().filter(|old| *old != script && !script.exists())
+                && let Err(e) = std::fs::copy(&old, &script)
+            {
+                self.message = Some(("Save mission".into(), format!("Can't write {}: {e}", script.display())));
+                return;
+            }
+            m.script_path = script.is_file().then_some(script);
             if !m.placement_path.exists() {
                 // A new file starts from the open one's text, so its other tables come along.
                 if let Err(e) = std::fs::write(&m.placement_path, &m.loaded_text) {
@@ -383,8 +405,10 @@ impl EditorApp {
     fn edit_properties(&mut self) {
         let Some(m) = &self.mission else { return };
         let text = std::fs::read_to_string(&m.placement_path).unwrap_or_else(|_| m.loaded_text.clone());
-        let p = Props::read(&text);
-        self.props_dialog = Some(PropsDialog { props: p.clone(), original: Some(p), overwrite: false, error: None });
+        let dll = props::mission_dll(&m.placement_path).and_then(|p| MissionDll::open(p).ok());
+        let p = Props::read_with_dll(&text, dll.as_ref());
+        let note = props::dll_note(&m.placement_path, &text);
+        self.props_dialog = Some(PropsDialog { props: p.clone(), original: Some(p), overwrite: false, error: None, note });
     }
 
     /// Writes changed properties into the open mission's placement file and DLL; reopens the map when it changed.
@@ -397,18 +421,12 @@ impl EditorApp {
             .map_err(|e| format!("Can't back up {}: {e}", path.display()))?;
         std::fs::write(&path, &updated).map_err(|e| format!("Can't write {}: {e}", path.display()))?;
         if m.loaded_text == disk {
-            m.loaded_text = updated; // the edits here stay edits against the new text
+            m.loaded_text = updated.clone(); // the edits here stay edits against the new text
         }
         m.name = new.name.clone();
         m.map_name = new.map.clone();
         let mut summary = format!("Saved the properties to {}.", path.file_name().unwrap_or_default().to_string_lossy());
-        match props::mission_dll(&path) {
-            Some(dll) => summary += &format!(" {}", props::patch_mission_dll(&dll, old, new)?),
-            None if new.name != old.name || new.map != old.map => {
-                summary += " There is no mission DLL beside it to patch: the name and map won't change in the game until it has one.";
-            }
-            None => {}
-        }
+        summary += &format!(" {}", props::save_dll(&path, &updated)?);
         if new.map != old.map {
             let map = self.mission.as_ref().map(|m| m.map_to_open()).unwrap_or_default();
             if let Err(e) = self.load_map(ctx, &map) {
@@ -444,7 +462,7 @@ impl EditorApp {
                     }
                 });
                 ui.end_row();
-                ui.label("Tech file");
+                ui.label("Tech tree file");
                 ui.text_edit_singleline(&mut d.props.tech);
                 ui.end_row();
                 ui.label("Type");
@@ -460,7 +478,19 @@ impl EditorApp {
                 ui.label("Players");
                 ui.add(egui::DragValue::new(&mut d.props.players).range(1..=6));
                 ui.end_row();
+                ui.label("Unit-only mission");
+                ui.checkbox(&mut d.props.unit_only, "most reports off (no colony to manage)");
+                ui.end_row();
+                let multiplayer = crate::dll::is_multiplayer_type(&d.props.mission_type);
+                ui.label("AI players");
+                ui.add_enabled(multiplayer, egui::DragValue::new(&mut d.props.ai_players).range(0..=5))
+                    .on_disabled_hover_text("Computer players a multiplayer game adds (DescBlockEx); for multiplayer types.");
+                ui.end_row();
             });
+            ui.small("These go into the mission DLL, which Save mission writes with the placement.");
+            if let Some(note) = &d.note {
+                ui.colored_label(egui::Color32::from_rgb(200, 140, 0), note);
+            }
             if d.original.is_none() {
                 match &new_files {
                     Some(f) => {
@@ -503,9 +533,9 @@ impl EditorApp {
                     d.error = Some(problem);
                     return;
                 }
-                let (props, original, overwrite) = (d.props.clone(), d.original.clone(), d.overwrite);
+                let (props, original, overwrite, dll_differs) = (d.props.clone(), d.original.clone(), d.overwrite, d.note.is_some());
                 let result = match original {
-                    Some(old) if old == props => Ok(()),
+                    Some(old) if old == props && !dll_differs => Ok(()),
                     Some(old) => self.apply_properties(ctx, &old, &props),
                     None => match new_files {
                         None => Err("The name needs a letter or digit, and the Outpost 2 folder must be set.".to_string()),
@@ -691,7 +721,7 @@ impl EditorApp {
                     self.edit_properties();
                 }
                 if ui.button("New mission...").clicked() {
-                    self.props_dialog = Some(PropsDialog { props: Props::default(), original: None, overwrite: false, error: None });
+                    self.props_dialog = Some(PropsDialog { props: Props::default(), original: None, overwrite: false, error: None, note: None });
                 }
                 ui.separator();
                 if ui.add_enabled(has_mission, egui::Button::new("Import regions from...")).clicked() {

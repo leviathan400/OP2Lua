@@ -3,6 +3,64 @@
 All notable changes to OP2Lua (the engine: `OP2LuaCore.dll`, the mission stub, the editor and tools).
 For the author-facing SDK, see the OP2LuaSDK changelog.
 
+## [0.8.14] - 2026-11-26
+
+### Added
+
+- `unit:launch_at_pixel(px, py, force)`: with `force` true the Spaceport launches although it is EMPed, the game's
+  own forced launch, as a stock mission captures a rocket.
+- The type names `SULV` and `RLV`, the Spaceport's two rockets: for a count trigger's `type` and what
+  `unit.object_on_pad` names.
+- `player.rlv_count` and `player:capture_rlv(from)`: the RLVs a player has, and taking one from another player, the
+  game's own calls.
+
+### Changed
+
+- `unit:launch_at_pixel` warns when the game faults on the launch instead of saying nothing.
+
+### Fixed
+
+- `trigger.count{type = "RLV", ...}` counted nothing and never fired: the name wasn't known, so the trigger counted
+  no type at all, without a warning.
+- `unit:set_factory_cargo` on a Spaceport now makes the game's own call, which loads the launch pad too: a rocket
+  set so (`set_factory_cargo(1, "RLV")`) was in the bay but not on the pad, so there was nothing to launch.
+
+Saves made with 0.8.13 load and carry on.
+
+## [0.8.13] - 2026-11-26
+
+### Added
+
+- `player.morale` and `player.morale_level`, read and set: the colony's morale (0-99) and its level.
+- `player:morale_state()` / `player:set_morale_state(t)`: the player's whole morale record, the block the game itself
+  carries from one campaign mission to the next, so a campaign can save it with `campaign.save` and give it back.
+- `player:techs()`: the topics the player has researched, to carry over and give back with `mark_research`.
+- OP2LuaEditor (both editors): Mission Properties sets every value the game reads from the mission DLL, adding the
+  tech tree file, a unit-only mission and a multiplayer game's AI players. The placement's header gains `unit_only`
+  and `ai_players` for them.
+- `op2lua-newmission`: `--tech`, `--max-tech`, `--unit-only` and `--ai-players`; `--type` also takes `Tutorial`,
+  `AutoDemo`, a campaign mission's number and the placement's `Multi...` names. `--dll-from <Base>.placement.lua`
+  builds an existing mission's DLL from its header.
+
+### Changed
+
+- OP2LuaEditor's Save Mission (both editors) also writes the mission DLL: a copy of the stub with every value from
+  the placement's header written at its export (name, map, tech tree, type, players, max tech level, unit-only, AI
+  players). A key the header lacks is taken from the DLL already there; the old DLL is kept as `.bak`, and a DLL
+  that isn't an OP2Lua stub is left alone. Save As brings the mission's `<Base>.lua` along.
+- `op2lua-newmission` writes the same bytes as the editors, and the placement it writes carries the tech tree and
+  max tech level it was given.
+
+### Fixed
+
+- A mission DLL could disagree with its placement and nothing put it right: the editors patched only the fields
+  that changed, by searching the DLL for their old text, and `op2lua-newmission` always left the max tech level at
+  12 and the tech tree at `MULTITEK.TXT`. A DLL with the stub's max tech level 12 lets the player research past the
+  mission's limit from the start. Saving the mission in either editor, or `op2lua-newmission --dll-from`, now
+  rewrites it from the placement.
+
+Saves made with 0.8.12 load and carry on.
+
 ## [0.8.12] - 2026-11-25
 
 ### Changed

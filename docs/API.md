@@ -1,7 +1,7 @@
 # OP2Lua Mission API
 
 The surface a mission author works with in `mission.lua`. Small, shaped like the game, and
-multiplayer-safe by construction (see the note at the bottom). Implemented as of v0.8.12.
+multiplayer-safe by construction (see the note at the bottom). Implemented as of v0.8.14.
 
 ## Coordinates (type what you see in-game)
 
@@ -159,7 +159,7 @@ Prefer `at_mark` / `marks(n)` over the legacy `game.seconds` / `game.minutes`.
 |---|---|
 | `game.create_unit{ type=, player=, at=, count=, weapon=, direction=, lights=, exact= }` | Create units; returns a list of `Unit` (empty for an unknown `type`, with a warning in the log). `at` is any location form. `player` accepts a `Player` or a 1-based number (default `players[1]`). `count` defaults to 1, `direction` to `"East"` (see *Names*), `lights` to on. Each unit goes on a clear tile near `at`, found by the game; `exact = true` places them on `at` itself (several in rows of 4 from `at`), as a mission's setup places its bases (structures beside tubes) - only on tiles known to be free. |
 | `game.message_at(text, sound, player, px, py)` | A message for one player (`nil`: everyone; `sound` as for `game.message`, `false` for none) that points at a spot of the map in pixels, as the stock missions post theirs (CPS2's "Microbe growth detected!"). |
-| `game.version()` | The running OP2LuaCore: its version and when its DLL was built, two strings: `local v, built = game.version()` gives `"0.8.12"`, `"2026-11-17 12:15:06"`. The build time is the DLL's link time (a copy keeps it), the same one the log's first line and OP2LuaEditor's status bar show. |
+| `game.version()` | The running OP2LuaCore: its version and when its DLL was built, two strings: `local v, built = game.version()` gives `"0.8.14"`, `"2026-11-17 12:15:06"`. The build time is the DLL's link time (a copy keeps it), the same one the log's first line and OP2LuaEditor's status bar show. |
 | `game.op2_version()` | The running Outpost 2: the version the game goes by and Outpost2.exe's own file version, two strings (either one nil when it can't be read): `local v, exe = game.op2_version()` gives `"1.4.0.1"`, `"1.2.0.7"` under OPU 1.4.x. The first is the game's `TApp::Version`, the number its multiplayer lobby compares (`1.2.0.7` for the GOG exe alone, `1.3.0.4` retail 1.3.6, `1.4.0.1` OPU 1.4.x); OPU sets it, the file on disk keeps 1.2.0.7. For display only: don't branch game logic on it in multiplayer. |
 | `game.message(text [, sound])` | In-game message (comms panel). `sound` is a name (`"EnemyUnitSighted"`) or raw id; omit for the game's default (Beep8), or `false` for none (e.g. before `game.play_wav`). **Keep `text` short - OP2's comms panel truncates around ~90 chars; put full detail in the log via `print()` instead.** |
 | `game.sound(name_or_id [, toPlayer])` | Play a game sound (e.g. `game.sound("WeAreUnderAttack")`), for everyone or for one player. `toPlayer` is the game's **0-based** player number (`unit.owner`), not a `Player`. |
@@ -511,7 +511,7 @@ shown on each player's own screen.
 | `unit:build_wall(type, area)` / `unit:remove_wall(area)` | Earthworker: build (`"Wall"`/`"Tube"`/`"LavaWall"`/`"MicrobeWall"`) or remove over an area. |
 | `unit:doze(area)` / `unit:salvage(area, gorf)` | RoboDozer bulldoze; Cargo Truck salvage rubble to a GORF. |
 | `unit:launch([target])` | Spaceport: launch the rocket on the pad (optional target location). |
-| `unit:launch_at_pixel(px, py)` | Spaceport: launch at a pixel of the map, as the stock missions' `Unit::DoLaunch(px, py, 0)` (`launch` aims at a tile's centre). |
+| `unit:launch_at_pixel(px, py[, force])` | Spaceport: launch at a pixel of the map, as the stock missions' `Unit::DoLaunch(px, py, 0)` (`launch` aims at a tile's centre). With `force` true it launches although the Spaceport is EMPed, as the game's own `DoLaunch(px, py, 1)` (Plymouth 12 launches a captured RLV so); without it an EMPed Spaceport keeps its rocket. |
 | `unit:infect()` | The Blight takes the unit (`Unit::DoInfect`; Eden 1's volcano). |
 | `unit:do_transfer(player)` | The unit goes over to `player` at once (the game's own `Unit::DoTransfer`, as a stock mission calls it; `transfer` sends a command). |
 | `unit:set_damage(n)` / `unit:set_opp_fired_upon(on)` | The unit's damage; whether it fires back when fired upon (`Unit::SetDamage`, `Unit::SetOppFiredUpon`). |
@@ -522,7 +522,7 @@ shown on each player's own screen.
 |---|---|
 | `unit:produce(type [, weapon])` | Vehicle/Structure Factory: queue a unit or kit. |
 | `unit:develop(type)` | Spaceport: build a rocket or its cargo (`"EMPMissile"`, `"SolarSatellite"`, a starship module...). |
-| `unit:set_factory_cargo(bay, type [, extra])` / `unit:transfer_cargo(bay)` | Preload a kit into bay `1..6` (`extra`: a Guard Post kit's weapon, picked for the Guard Post as `unit.weapon` describes) / move a bay's kit to the docked vehicle. |
+| `unit:set_factory_cargo(bay, type [, extra])` / `unit:transfer_cargo(bay)` | Preload a kit into bay `1..6` (`extra`: a Guard Post kit's weapon, picked for the Guard Post as `unit.weapon` describes) / move a bay's kit to the docked vehicle. On a Spaceport it is the game's own `Unit::SetFactoryCargo`, which also loads the pad: `set_factory_cargo(1, "RLV")` puts an RLV on it, ready to launch (`unit.object_on_pad` reads `"RLV"`). |
 | `unit:factory_cargo(bay)` | The kit type name in a 1-based bay of a Structure Factory or Spaceport (`"None"` if empty), and its weapon or cargo (a Guard Post kit's `"Starflare"`, under the name `set_factory_cargo` takes) or `nil`. |
 | `unit:research(techId [, scientists])` | Lab: begin researching a tech, with `scientists` (default 1). |
 | `unit:train_scientists(n)` | University: train scientists. |
@@ -573,11 +573,15 @@ Post kit's weapon).
 | `player.power` | Spare power (read-only): what the colony generates less what its working structures use, as the game's last update left it. |
 | `player.food_net` | The food stored's change over the colony's last food update (read-only; the game updates food every 256 ticks). Negative: the colony eats more than it grows. |
 | `player.ore_capacity` / `player.rare_ore_capacity` | How much common and rare ore the colony can store (read-only), as the game's last update worked it out; the game cuts `player.ore` / `player.rare_ore` down to these at each colony update (every 256 ticks). |
+| `player.morale` / `player.morale_level` | Morale, 0-99, and its level (`"Excellent"`, `"Good"`, `"Fair"`, `"Poor"`, `"Terrible"`; set also takes Great/OK/Rotten), get or set. At each morale update (every 256 ticks, on the player's own slot) the game moves morale at most 5 toward what the colony earns and works the level out from it, so a value set is where it moves from. A lock (`game.morale_steady`) holds it instead. |
+| `player:morale_state()` / `player:set_morale_state(t)` | The player's whole morale record, the block the game itself carries from one campaign mission to the next: `level` (0 Excellent to 4 Terrible), `event` (the pool that morale events add to; it shrinks to 230/256 at each update), `morale`, `trend` (+1, 0, -1 at the last update), and the inputs each update works out again: `residence_demand`, `food_supply`, `disabled_ratio`, `rec_forum_demand`, `forum_demand`, `med_center_demand`, `nursery`, `university`, `warning_systems`, `dirt_prevention`, `unoccupied`, `scientists_as_workers`, `gorf`, `zeroed`. `set_morale_state` writes the fields `t` names (whole numbers) and leaves the rest; an unknown name is an error. Save it with `campaign.save` when a mission is won and give it back in the next mission's `on_init`, before the mission's own changes, as the game gives a campaign mission its carry-over. |
 | `player:cost(type [, weapon])` | What `type` costs this player's colony, `{ common =, rare = }` (ore), with a turret `weapon`'s cost added for a vehicle or Guard Post; nil for an unknown type. Research that changes a cost is included. |
 | `player.difficulty` | The Colony Games menu difficulty as `"Easy"`/`"Normal"`/`"Hard"` (`"Unknown"` for any other value; read-only). Read it off the human player to self-tune a mission per difficulty. |
 | `player:unit_stat(type, field)` / `player:set_unit_stat(type, field, value)` | The player's stats for a unit type (a name, or a raw MapID number to walk a range of types), the record the tech tree's upgrades change: `"hp"`, `"repair"`, `"armor"` (raw: 256, 180, 130, 90, 60, 40 for classes 0-5), `"common_cost"`, `"rare_cost"`, `"build_time"`, `"sight_range"`; vehicles `"move_speed"`, `"turn_rate"`, `"production_rate"`, `"reload_time"`, `"cargo_capacity"`; weapons `"concussion"`, `"penetration"`, `"reload_time"`, `"weapon_range"`; buildings `"power"`, `"workers"`, `"scientists"`, `"storage"`, `"production_capacity"`, `"storage_bays"`. In a multiplayer game, change them the same way on every machine (from the script, not from one player's input). An unknown type, field or player reads 0 (and logs an error). |
 | `player:unmark_research(tech)` | The player no longer has the topic (the opposite of `mark_research`). |
 | `player:satellite_count(type)` | How many of a satellite or launched Spaceport cargo rocket the player has - e.g. `"EDWARDSatellite"`, `"RareMetalsCargo"`, `"CommonMetalsCargo"`, `"FoodCargo"`, `"EvacuationModule"`. Drives Starship-colony evacuation victories. |
+| `player.rlv_count` | The RLVs (Spaceport's reusable launch vehicles) the player has, as the game counts them (`_Player::GetRLVCount`). |
+| `player:capture_rlv(from)` | The player takes an RLV from `from` (a Player or 1-7) when that player has one, the game's own `_Player::CaptureRLV`: Plymouth 12 takes the Eden RLV it launched from an EMPed Spaceport (`unit:launch_at_pixel(0, 0, true)`) once the computer player's count shows it. |
 | `player:set_launched(type, on)` | Marks a starship module or cargo (`IonDriveModule` ... `ChildrenModule`, the `Skydock` among them) launched or not, for a mission that starts with the starship in orbit; `satellite_count(type)` reads it back. Any other type is an error. |
 | `player.edward_satellites` | EDWARD Satellites in orbit (0-15), read and set. With one up, every mining beacon counts as surveyed for the player, so its Robo-Miners need no Robo-Surveyor. |
 | `player.solar_satellites` | Solar Power Satellites in orbit (0-15), read and set. |
@@ -597,6 +601,7 @@ if diff == "Hard" then players[2].ore = 6000 end
 | `player:has_tech(techId)` | Has this technology been researched? |
 | `player:can_research(techId)` | Can a lab start this topic now? Not researched yet, available to the player's colony, every prerequisite researched and within the mission's tech level (what a lab's topic list offers). False for a topic the tree hasn't. |
 | `player:mark_research(techId)` | Grant a tech (and free follow-ons). |
+| `player:techs()` | The ids of the topics the player has, lowest first, from the loaded tech tree: what a campaign mission carries over for the next to give back with `mark_research` (check `game.tech(id)` first: the next mission's tree may lack a topic). |
 | `player:set_tech_level(n)` | Grant all techs up to level `n`. |
 | `player:is_ally(other)` / `player:ally_with(other)` / `player:mutually_ally_with(other)` | Check / set alliances (`other` = `Player` or 1-based number). |
 | `player:go_eden()` / `player:go_plymouth()` | Set faction at runtime. |
@@ -663,7 +668,8 @@ is no unit at all (`create_unit` makes nothing, `owns_any` is false).
 - **Spaceport cargo:** `EMPMissile`, `EDWARDSatellite`, `SolarSatellite`, `IonDriveModule`, `FusionDriveModule`,
   `CommandModule`, `FuelingSystems`, `HabitatRing`, `SensorPackage`, `Skydock`, `StasisSystems`,
   `OrbitalPackage`, `PhoenixModule`, `RareMetalsCargo`, `CommonMetalsCargo`, `FoodCargo`, `EvacuationModule`,
-  `ChildrenModule`.
+  `ChildrenModule`; the Spaceport's rockets `SULV` and `RLV` (for `unit.object_on_pad` and a count trigger's
+  `type`).
 - **Directions:** `East` (the default), `SouthEast`, `South`, `SouthWest`, `West`, `NorthWest`, `North`,
   `NorthEast`; any other name is East.
 - **Cargo:** under *Unit* (Cargo types). **Sounds:** under *game.\**.
@@ -775,7 +781,8 @@ See **[`LOGGING.md`](LOGGING.md)** for the full logging/debug standard every mis
 
 A mission can be a multiplayer game rather than a Colony game: scaffold it with
 `op2lua-newmission "<Name>" --players 2 --type LastOneStanding` (or `LandRush`, `SpaceRace`,
-`ResourceRace`, `Midas`). OP2 lists it under that type in the multiplayer lobby; its DLL needs no `c`.
+`ResourceRace`, `Midas`; `--ai-players <n>` adds computer players). OP2 lists it under that type in the
+multiplayer lobby; its DLL needs no `c`.
 
 - **Leave `players` out of `placement.lua`.** The lobby has already set each player's colony,
   colour and human/AI; a `players` entry would override them. `players[1..n]` exist for every

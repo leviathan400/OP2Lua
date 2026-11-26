@@ -24,7 +24,7 @@ no capstone, no op2ext module**.
 
 ## Status
 
-**Working in-game (v0.8.12).** A demo pack runs in real Outpost 2 - **Hold the Line** (defense),
+**Working in-game (v0.8.14).** A demo pack runs in real Outpost 2 - **Hold the Line** (defense),
 **Strike Team** (offense), **The Convoy** (escort), **Hold the Beacon** (control), and **Seek and
 Destroy** (hunt): placement, escalating waves, scripted/reactive enemies, timed reinforcements, cargo
 trucks, synced RNG, combat orders, messages, Savant voices, the multiplayer "Morale Steady" rule, and

@@ -667,10 +667,10 @@ Partial Public Class fMain
         End If
     End Sub
 
-    ' ===== Mission Properties (edit placement.lua metadata + keep the DLL in sync) =====
-    ' The metadata (name/map/tech/type/max_tech/players_count) lives at the top of placement.lua, but
-    ' the NAME and MAP are ALSO baked into the mission DLL as exports OP2 reads directly (LevelDesc /
-    ' MapName), before Lua runs. So changing the map means: rewrite placement.lua AND patch <Base>.dll.
+    ' ===== Mission Properties (the placement's header and the mission DLL built from it) =====
+    ' The properties (name, map, tech, type, max_tech, players_count, unit_only, ai_players) live at the top of
+    ' placement.lua, and OP2 reads the same values from the mission DLL before Lua runs. OK writes them into the
+    ' placement and builds the DLL from them (MissionDll.SaveDll), so the two always agree.
     Private Sub MissionProps_Click(sender As Object, e As EventArgs)
         If String.IsNullOrEmpty(currentPlacementFile) OrElse Not File.Exists(currentPlacementFile) Then
             MessageBox.Show("Open a mission first (File > Open Mission) - properties are read from its placement.lua.",
@@ -686,32 +686,17 @@ Partial Public Class fMain
             Return
         End Try
 
-        Dim oldName As String = ScalarString(text, "name")
-        Dim oldMap As String = ScalarString(text, "map")
-        Dim oldTech As String = ScalarString(text, "tech")
-        Dim oldType As String = ScalarString(text, "type")
-        Dim oldMaxTech As Integer = ScalarInt(text, "max_tech", 12)
-        Dim oldPlayers As Integer = ScalarInt(text, "players_count", 2)
+        Dim hasAi As Boolean
+        Dim old As MissionProps = MissionDll.ReadProps(text, MissionDll.ReadDllBeside(currentPlacementFile, hasAi))
 
         Using f As New fMissionProps()
-            f.MissionName = oldName
-            f.MapFile = oldMap
-            f.Tech = If(String.IsNullOrEmpty(oldTech), "MULTITEK.TXT", oldTech)
-            f.MissionTypeName = If(String.IsNullOrEmpty(oldType), "Colony", oldType)
-            f.MaxTech = oldMaxTech
-            f.PlayersCount = oldPlayers
+            f.Props = old.Clone()
+            f.Note = MissionDll.DllNote(currentPlacementFile, text)
             f.MapBrowseDir = MapBrowseRoot()
             If f.ShowDialog(Me) <> DialogResult.OK Then Return
+            Dim p As MissionProps = f.Props
 
-            ' Round-trip the scalar metadata back into the placement text (first occurrence of each key).
-            Dim updated As String = text
-            updated = ReplaceScalarString(updated, "name", f.MissionName)
-            updated = ReplaceScalarString(updated, "map", f.MapFile)
-            updated = ReplaceScalarString(updated, "tech", f.Tech)
-            updated = ReplaceScalarString(updated, "type", f.MissionTypeName)
-            updated = ReplaceScalarInt(updated, "max_tech", f.MaxTech)
-            updated = ReplaceScalarInt(updated, "players_count", f.PlayersCount)
-
+            Dim updated As String = MissionDll.WriteProps(text, p)
             Try
                 File.Copy(currentPlacementFile, currentPlacementFile & ".bak", True)
                 File.WriteAllText(currentPlacementFile, updated)
@@ -720,54 +705,18 @@ Partial Public Class fMain
                 Return
             End Try
 
-            ' Keep the sibling c<Base>.dll's (or <Base>.dll's) name/map exports in sync (OP2 reads these directly).
-            Dim baseName As String = Path.GetFileName(currentPlacementFile)
-            If baseName.ToLowerInvariant().EndsWith(".placement.lua") Then baseName = baseName.Substring(0, baseName.Length - ".placement.lua".Length)
-            Dim dllPath As String = Path.Combine(Path.GetDirectoryName(currentPlacementFile), "c" & baseName & ".dll")
-            If Not File.Exists(dllPath) Then dllPath = Path.Combine(Path.GetDirectoryName(currentPlacementFile), baseName & ".dll")
-            Dim dllNote As String = ""
-            If File.Exists(dllPath) Then
-                Try
-                    Dim bytes() As Byte = File.ReadAllBytes(dllPath)
-                    Dim patched As Integer = 0
-                    Dim failed As New List(Of String)()
-                    If f.MissionName <> oldName Then
-                        If PatchDllAsciiField(bytes, oldName, f.MissionName) Then patched += 1 Else failed.Add("name")
-                        PatchDllWideField(bytes, oldName, f.MissionName)   ' keep FileDescription in sync (best-effort)
-                    End If
-                    If f.MapFile <> oldMap Then
-                        If PatchDllAsciiField(bytes, oldMap, f.MapFile) Then patched += 1 Else failed.Add("map")
-                    End If
-                    ' The type and player count OP2 lists the mission under, in the DLL's DescBlock.
-                    If PlacementText.MissionTypeValue(f.MissionTypeName) <> PlacementText.MissionTypeValue(oldType) OrElse
-                       f.PlayersCount <> oldPlayers OrElse f.MaxTech <> oldMaxTech Then
-                        If PlacementText.PatchDescBlock(bytes, PlacementText.MissionTypeValue(f.MissionTypeName), f.PlayersCount, f.MaxTech) Then
-                            patched += 1
-                        Else
-                            failed.Add("DescBlock")
-                        End If
-                    End If
-                    If patched > 0 Then
-                        File.Copy(dllPath, dllPath & ".bak", True)
-                        File.WriteAllBytes(dllPath, bytes)
-                    End If
-                    If patched > 0 OrElse failed.Count > 0 Then
-                        dllNote = vbCrLf & vbCrLf & baseName & ".dll: patched " & patched & " export(s)" &
-                                  If(failed.Count > 0, "; could NOT locate: " & String.Join(", ", failed) & " (DLL left unchanged for those).", ".")
-                    End If
-                Catch ex As Exception
-                    dllNote = vbCrLf & vbCrLf & "Warning: could not patch " & baseName & ".dll: " & ex.Message
-                End Try
-            ElseIf f.MapFile <> oldMap OrElse f.MissionName <> oldName Then
-                dllNote = vbCrLf & vbCrLf & "Note: no " & baseName & ".dll beside the placement file. The map/name are also baked into the " &
-                          "mission DLL (OP2 reads them from it), so they won't change in-game until the DLL is built/patched."
-            End If
+            Dim dllNote As String
+            Try
+                dllNote = vbCrLf & vbCrLf & MissionDll.SaveDll(currentPlacementFile, updated, FindBundledStub())
+            Catch ex As Exception
+                dllNote = vbCrLf & vbCrLf & "The mission DLL was not written: " & ex.Message
+            End Try
 
             ' If the map changed, reload the new map onto the canvas (overlay regions/units unchanged).
-            If f.MapFile <> oldMap Then
-                Dim newMapPath As String = ResolveMapPath(f.MapFile, Path.GetDirectoryName(currentPlacementFile))
+            If Not String.Equals(p.MapFile, old.MapFile, StringComparison.OrdinalIgnoreCase) Then
+                Dim newMapPath As String = ResolveMapPath(p.MapFile, Path.GetDirectoryName(currentPlacementFile))
                 If String.IsNullOrEmpty(newMapPath) Then
-                    dllNote &= vbCrLf & vbCrLf & "(Could not find """ & f.MapFile & """ to display - it will still apply in-game.)"
+                    dllNote &= vbCrLf & vbCrLf & "(Could not find """ & p.MapFile & """ to display - it will still apply in-game.)"
                 ElseIf LoadMapFile(newMapPath) Then
                     RefreshRegionList()
                     RefreshUnitList()
@@ -775,7 +724,7 @@ Partial Public Class fMain
                 End If
             End If
 
-            Text = ApplicationName & " - " & f.MissionName
+            Text = ApplicationName & " - " & p.Name
 
             MessageBox.Show("Mission properties saved to " & Path.GetFileName(currentPlacementFile) & "." & dllNote,
                             "Mission Properties", MessageBoxButtons.OK, MessageBoxIcon.Information)
@@ -789,122 +738,12 @@ Partial Public Class fMain
         Return If(m.Success, m.Groups(1).Value, "")
     End Function
 
-    Private Function ScalarInt(text As String, key As String, fallback As Integer) As Integer
-        Dim m As Match = Regex.Match(text, "\b" & Regex.Escape(key) & "\s*=\s*(-?\d+)")
-        Dim v As Integer
-        If m.Success AndAlso Integer.TryParse(m.Groups(1).Value, v) Then Return v
-        Return fallback
-    End Function
-
-    Private Function ReplaceScalarString(text As String, key As String, value As String) As String
-        Dim rx As New Regex("(\b" & Regex.Escape(key) & "\s*=\s*"")[^""]*("")")
-        If Not rx.IsMatch(text) Then Return text
-        Return rx.Replace(text, "${1}" & value.Replace("$", "$$") & "${2}", 1)
-    End Function
-
-    Private Function ReplaceScalarInt(text As String, key As String, value As Integer) As String
-        Dim rx As New Regex("(\b" & Regex.Escape(key) & "\s*=\s*)-?\d+")
-        If Not rx.IsMatch(text) Then Return text
-        Return rx.Replace(text, "${1}" & value.ToString(), 1)
-    End Function
-
     ' Folder the "Change Map..." dialog should open in: <OP2>\OPU (falls back to the OP2 path).
     Private Function MapBrowseRoot() As String
         Dim base As String = My.Settings.OP2Path
         If String.IsNullOrEmpty(base) Then Return ""
         Dim opu As String = Path.Combine(base, "OPU")
         Return If(Directory.Exists(opu), opu, base)
-    End Function
-
-    ' --- mission DLL byte-patching (mirrors op2lua-newmission's patchField / patchWideField) ---
-
-    ' The stub's FileDescription placeholder (UTF-16 in the version resource). Must stay byte-for-byte
-    ' identical to the FileDescription in stub/LuaMission.rc and OP2LUA_DESC_PLACEHOLDER in the CLI tools.
-    Private Const StubDescPlaceholder As String = "OP2Lua mission name placeholder - set by the new-mission tool"
-
-    ' Overwrite a fixed char[1024] export string in a mission DLL: find a NUL-terminated occurrence of
-    ' oldStr (its current value), zero the field, write newStr + NUL. Returns False if not found.
-    Private Function PatchDllAsciiField(buf() As Byte, oldStr As String, newStr As String) As Boolean
-        If String.IsNullOrEmpty(oldStr) Then Return False
-        Dim oldBytes() As Byte = System.Text.Encoding.ASCII.GetBytes(oldStr)
-        Dim newBytes() As Byte = System.Text.Encoding.ASCII.GetBytes(newStr)
-        If newBytes.Length + 1 >= 1024 Then Return False
-
-        ' Find an occurrence immediately followed by a NUL (i.e. a complete field value, not a substring).
-        Dim idx As Integer = -1
-        Dim from As Integer = 0
-        Do
-            Dim hit As Integer = IndexOfBytes(buf, oldBytes, from)
-            If hit < 0 Then Exit Do
-            Dim term As Integer = hit + oldBytes.Length
-            If term < buf.Length AndAlso buf(term) = 0 Then idx = hit : Exit Do
-            from = hit + 1
-        Loop
-        If idx < 0 Then Return False
-
-        Dim clear As Integer = Math.Max(oldBytes.Length, newBytes.Length + 1)
-        For k As Integer = 0 To clear - 1
-            If idx + k < buf.Length Then buf(idx + k) = 0
-        Next
-        For k As Integer = 0 To newBytes.Length - 1
-            buf(idx + k) = newBytes(k)
-        Next
-        Return True
-    End Function
-
-    ' Overwrite a UTF-16 string value in the DLL's version resource (FileDescription): find a
-    ' NUL-terminated occurrence of oldStr (UTF-16LE) and replace it with newStr, zero-filling the rest
-    ' of the field. Length-preserving within the field's existing capacity (oldStr plus the run of NUL
-    ' words after it); returns False if not found or newStr won't fit. Mirrors patchWideField.
-    Private Function PatchDllWideField(buf() As Byte, oldStr As String, newStr As String) As Boolean
-        If String.IsNullOrEmpty(oldStr) Then Return False
-        Dim needle() As Byte = System.Text.Encoding.Unicode.GetBytes(oldStr)   ' UTF-16LE
-
-        ' Find an occurrence followed by a UTF-16 NUL word (0x0000) - a complete field value.
-        Dim idx As Integer = -1
-        Dim from As Integer = 0
-        Do
-            Dim hit As Integer = IndexOfBytes(buf, needle, from)
-            If hit < 0 Then Exit Do
-            Dim term As Integer = hit + needle.Length
-            If term + 1 < buf.Length AndAlso buf(term) = 0 AndAlso buf(term + 1) = 0 Then idx = hit : Exit Do
-            from = hit + 1
-        Loop
-        If idx < 0 Then Return False
-
-        ' Field capacity in WORDs = old chars + the trailing run of NUL words (stops at the next
-        ' non-zero byte, i.e. the following resource structure). Reserve one word for the terminator.
-        Dim capWords As Integer = oldStr.Length
-        Dim p As Integer = idx + needle.Length
-        Do While p + 1 < buf.Length AndAlso buf(p) = 0 AndAlso buf(p + 1) = 0
-            capWords += 1
-            p += 2
-        Loop
-        If newStr.Length > capWords - 1 Then Return False
-
-        Dim regionBytes As Integer = capWords * 2
-        For k As Integer = 0 To regionBytes - 1
-            If idx + k < buf.Length Then buf(idx + k) = 0
-        Next
-        Dim newBytes() As Byte = System.Text.Encoding.Unicode.GetBytes(newStr)
-        For k As Integer = 0 To newBytes.Length - 1
-            buf(idx + k) = newBytes(k)
-        Next
-        Return True
-    End Function
-
-    ' First index of needle within haystack at/after start (-1 if none).
-    Private Function IndexOfBytes(haystack() As Byte, needle() As Byte, start As Integer) As Integer
-        If needle.Length = 0 OrElse haystack.Length < needle.Length Then Return -1
-        Dim last As Integer = haystack.Length - needle.Length
-        For i As Integer = start To last
-            Dim ok As Boolean = True
-            For j As Integer = 0 To needle.Length - 1
-                If haystack(i + j) <> needle(j) Then ok = False : Exit For
-            Next
-            If ok Then Return i
-        Next
-        Return -1
     End Function
 
     ' ===== Open Mission (placement-first entry point) =====
@@ -1256,8 +1095,8 @@ Partial Public Class fMain
     End Function
 
     ' ===== New Mission (scaffold a fresh mission: clone+patch the bundled stub, write starter lua) =====
-    ' As op2lua-newmission does: clones the bundled LuaMission.dll, byte-patches its menu name and map and its DescBlock
-    ' (mission type, players, max tech), writes a starter <Base>.lua + <Base>.placement.lua into <OP2>\OPU\maps\LUA,
+    ' Builds the mission DLL from the dialog's properties (a copy of the bundled LuaMission.dll with each value at its
+    ' export, MissionDll.BuildDll), writes a starter <Base>.lua + <Base>.placement.lua into <OP2>\OPU\maps\LUA,
     ' then opens it.
     Private Sub NewMission_Click(sender As Object, e As EventArgs)
         If String.IsNullOrEmpty(My.Settings.OP2Path) Then
@@ -1275,16 +1114,12 @@ Partial Public Class fMain
 
         Using f As New fMissionProps()
             f.Text = "New Mission"
-            f.MissionName = ""
-            f.MapFile = "eden01.map"
-            f.Tech = "MULTITEK.TXT"
-            f.MissionTypeName = "Colony"
-            f.MaxTech = 12
-            f.PlayersCount = 2
+            f.Props = New MissionProps()
             f.MapBrowseDir = MapBrowseRoot()
             If f.ShowDialog(Me) <> DialogResult.OK Then Return
+            Dim p As MissionProps = f.Props
 
-            Dim base As String = BaseNameFrom(f.MissionName)
+            Dim base As String = BaseNameFrom(p.Name)
             If String.IsNullOrEmpty(base) Then
                 MessageBox.Show("The mission name needs at least one letter or digit.", "New Mission", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return
@@ -1293,7 +1128,7 @@ Partial Public Class fMain
             ' OP2 1.4.1 loads missions flat from OPU\maps\LUA - write the three files straight in there. Outpost 2
             ' lists a DLL whose name starts with c under Colony Games; the core finds cMyMission.dll's scripts as
             ' MyMission.*, dropping a c before a capital, so a base without a leading capital keeps the c throughout.
-            Dim colony As Boolean = Not PlacementText.IsMultiplayerType(f.MissionTypeName)
+            Dim colony As Boolean = Not PlacementText.IsMultiplayerType(p.TypeName)
             Dim dllBase As String = If(colony, "c" & base, base)
             If colony AndAlso Not Char.IsUpper(base(0)) Then base = dllBase
             Dim outDir As String = Path.Combine(My.Settings.OP2Path, "OPU", "maps", "LUA")
@@ -1309,27 +1144,11 @@ Partial Public Class fMain
             Try
                 Directory.CreateDirectory(outDir)
 
-                ' DLL: clone the stub, then byte-patch the menu name + map exports + FileDescription.
-                Dim bytes() As Byte = File.ReadAllBytes(stubPath)
-                If Not PatchDllAsciiField(bytes, "OP2Lua mission (unpatched template)", f.MissionName) Then
-                    MessageBox.Show("The bundled stub does not contain the expected name placeholder - it may be the wrong DLL.",
-                                    "New Mission", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                    Return
-                End If
-                PatchDllAsciiField(bytes, "eden01.map", f.MapFile)
-                PatchDllWideField(bytes, StubDescPlaceholder, f.MissionName)   ' FileDescription (Properties > Details)
-                ' Mission type + player count: OP2 lists the mission by its type (a multiplayer type puts it in the
-                ' lobby) and sizes the game by the player count, both read from the DLL.
-                If Not PlacementText.PatchDescBlock(bytes, PlacementText.MissionTypeValue(f.MissionTypeName), f.PlayersCount, f.MaxTech) Then
-                    MessageBox.Show("The bundled stub has no DescBlock export - it may be the wrong DLL.",
-                                    "New Mission", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                    Return
-                End If
-                File.WriteAllBytes(dllOut, bytes)
+                File.WriteAllBytes(dllOut, MissionDll.BuildDll(File.ReadAllBytes(stubPath), p))
 
                 ' Starter lua files.
-                File.WriteAllText(placementOut, NewPlacementSkeleton(base, f.MissionName, f.MapFile, f.Tech, f.MissionTypeName, f.MaxTech, f.PlayersCount))
-                File.WriteAllText(scriptOut, NewMissionSkeleton(base, f.MissionName, f.MissionTypeName))
+                File.WriteAllText(placementOut, NewPlacementSkeleton(base, p))
+                File.WriteAllText(scriptOut, NewMissionSkeleton(base, p.Name, p.TypeName))
             Catch ex As Exception
                 MessageBox.Show("Could not create mission: " & ex.Message, "New Mission", MessageBoxButtons.OK, MessageBoxIcon.Error)
                 Return
@@ -1337,9 +1156,9 @@ Partial Public Class fMain
 
             ' Open the new mission straight away.
             If LoadMission(placementOut) Then
-                Text = ApplicationName & " - " & f.MissionName
-                MessageBox.Show("Created mission """ & f.MissionName & """ in:" & vbCrLf & outDir & vbCrLf & vbCrLf &
-                                dllBase & ".dll   (menu name, map, type and players patched)" & vbCrLf &
+                Text = ApplicationName & " - " & p.Name
+                MessageBox.Show("Created mission """ & p.Name & """ in:" & vbCrLf & outDir & vbCrLf & vbCrLf &
+                                dllBase & ".dll   (the mission's properties, as OP2 reads them)" & vbCrLf &
                                 base & ".lua   (your logic)" & vbCrLf &
                                 base & ".placement.lua   (your layout)" & vbCrLf & vbCrLf &
                                 "Those three files are the mission - copy them where Outpost 2 loads missions to play.",
@@ -1372,15 +1191,20 @@ Partial Public Class fMain
 
     ' The starter placement.lua for New Mission: a small two-player fight, or for a multiplayer type a Command Center per
     ' player and no players table (the lobby sets each player's colony and colour).
-    Private Function NewPlacementSkeleton(base As String, name As String, map As String, tech As String,
-                                          missionType As String, maxTech As Integer, players As Integer) As String
+    Private Function NewPlacementSkeleton(base As String, p As MissionProps) As String
+        Dim name As String = p.Name
+        Dim missionType As String = p.TypeName
+        Dim players As Integer = p.Players
         Dim q As Func(Of String, String) = Function(s) """" & s & """"
         Dim sb As New StringBuilder()
         sb.AppendLine("-- " & base & ".placement.lua  -  " & name & "  -  starting layout.")
         sb.AppendLine("-- Coordinates are the ones shown on the in-game status bar (hover a tile to read them).")
         sb.AppendLine("return {")
-        sb.AppendLine("  name = " & q(name) & ", map = " & q(map) & ", tech = " & q(tech) & ", type = " & q(missionType) & ",")
-        sb.AppendLine("  max_tech = " & maxTech & ", players_count = " & players & ",")
+        sb.AppendLine("  name = " & q(name) & ", map = " & q(p.MapFile) & ", tech = " & q(p.Tech) & ", type = " & q(missionType) & ",")
+        sb.AppendLine("  max_tech = " & p.MaxTech & ", players_count = " & players & ",")
+        If p.UnitOnly OrElse p.AiPlayers <> 0 Then
+            sb.AppendLine("  unit_only = " & If(p.UnitOnly, "true", "false") & ", ai_players = " & p.AiPlayers & ",")
+        End If
         sb.AppendLine("")
         If PlacementText.IsMultiplayerType(missionType) Then
             ' A multiplayer game: the lobby sets each player's colony, colour and human/AI; a players table would
@@ -1390,8 +1214,8 @@ Partial Public Class fMain
             sb.AppendLine("  units = {")
             sb.AppendLine("    -- What every game starts with (player = 1.." & players & "). Bases that depend on the lobby's")
             sb.AppendLine("    -- settings (game.initial_units()) are made in on_init instead.")
-            For p As Integer = 1 To players
-                sb.AppendLine("    { type = ""CommandCenter"", player = " & p & ", at = { " & (20 + 12 * (p - 1)) & ", 20 } },")
+            For k As Integer = 1 To players
+                sb.AppendLine("    { type = ""CommandCenter"", player = " & k & ", at = { " & (20 + 12 * (k - 1)) & ", 20 } },")
             Next
             sb.AppendLine("  },")
             sb.AppendLine("")
@@ -1538,7 +1362,9 @@ Partial Public Class fMain
         End If
     End Sub
 
-    ' Save the regions and units into a placement file chosen by the user; it becomes the open mission's file.
+    ' Save the mission under a placement file chosen by the user; it becomes the open mission's file. A new file starts
+    ' from the open one's text (its header and other tables come along), and the open mission's <Base>.lua is copied
+    ' beside it when there is none, so the copy is a whole mission with its DLL.
     Private Sub SaveMissionAs()
         Using dlg As New SaveFileDialog()
             dlg.Title = "Save mission placement.lua"
@@ -1550,28 +1376,55 @@ Partial Public Class fMain
                 dlg.InitialDirectory = My.Settings.OP2Path
             End If
             If dlg.ShowDialog() <> DialogResult.OK Then Return
-            SaveMissionToFile(dlg.FileName)
-            currentPlacementFile = dlg.FileName
+            Dim target As String = dlg.FileName
+            If Not target.ToLowerInvariant().EndsWith(".placement.lua") Then
+                target = Path.Combine(Path.GetDirectoryName(target), Path.GetFileNameWithoutExtension(target) & ".placement.lua")
+            End If
+            Try
+                If Not File.Exists(target) AndAlso Not String.IsNullOrEmpty(currentPlacementFile) AndAlso File.Exists(currentPlacementFile) Then
+                    File.Copy(currentPlacementFile, target)
+                End If
+                Dim script As String = Path.Combine(Path.GetDirectoryName(target), MissionDll.PlacementBase(target) & ".lua")
+                If currentMissionScript IsNot Nothing AndAlso File.Exists(currentMissionScript) AndAlso Not File.Exists(script) Then
+                    File.Copy(currentMissionScript, script)
+                End If
+                currentMissionScript = If(File.Exists(script), script, Nothing)
+            Catch ex As Exception
+                MessageBox.Show("Could not save mission: " & ex.Message, "Save Mission", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            End Try
+            SaveMissionToFile(target)
+            currentPlacementFile = target
             UpdateMissionLabel()
         End Using
     End Sub
 
-    ' Writes the current regions + units tables into the placement file (inserting either block if it
-    ' is absent), backing up the previous file as <file>.bak.
+    ' Writes the current regions + units tables into the placement file (inserting either block if it is absent),
+    ' backing up the previous file as <file>.bak, then builds the mission DLL from the placement's header
+    ' (MissionDll.SaveDll) so the DLL holds what the editor shows.
     Private Sub SaveMissionToFile(filePath As String)
+        Dim summary As String
+        Dim updated As String
         Try
             Dim existed As Boolean = File.Exists(filePath)
             Dim text As String = If(existed, File.ReadAllText(filePath), "return {" & vbCrLf & "}" & vbCrLf)
-            Dim updated As String = PlacementText.ReplaceTable(text, "regions", EmitRegionsBlock(PlacementText.NewLineOf(text)))
+            updated = PlacementText.ReplaceTable(text, "regions", EmitRegionsBlock(PlacementText.NewLineOf(text)))
             updated = WriteUnits(updated, filePath)
             If existed Then File.Copy(filePath, filePath & ".bak", True)
             File.WriteAllText(filePath, updated)
             ReloadUnitsIfOpen(filePath, updated)
-            MessageBox.Show("Saved " & regionList.Count & " region(s) and " & unitList.Count & " unit(s) to " &
-                            Path.GetFileName(filePath) & "." & If(existed, vbCrLf & "Backup: " & Path.GetFileName(filePath) & ".bak", ""),
-                            "Save Mission", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            summary = "Saved " & regionList.Count & " region(s) and " & unitList.Count & " unit(s) to " &
+                      Path.GetFileName(filePath) & "." & If(existed, vbCrLf & "Backup: " & Path.GetFileName(filePath) & ".bak", "")
         Catch ex As Exception
             MessageBox.Show("Could not save mission: " & ex.Message, "Save Mission", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End Try
+        Try
+            MessageBox.Show(summary & vbCrLf & vbCrLf & MissionDll.SaveDll(filePath, updated, FindBundledStub()),
+                            "Save Mission", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        Catch ex As Exception
+            MessageBox.Show(summary & vbCrLf & vbCrLf & "But the mission DLL was not written: " & ex.Message,
+                            "Save Mission", MessageBoxButtons.OK, MessageBoxIcon.Warning)
         End Try
     End Sub
 

@@ -94,11 +94,13 @@ just *be* ordinary mission DLLs. The result is split in two:
   Ships once.
 - **`LuaMission.dll`** - a tiny per-mission stub. It exports the real OP2 mission interface
   (`DescBlock`, `LevelDesc`, `MapName`, `InitProc`, `AIProc`, `On*`, …), finds its own folder via
-  `GetModuleFileName` at load, and forwards every call into `OP2LuaCore.dll`. The converter (or the
-  `op2lua-newmission` tool) clones this prebuilt binary and **byte-patches** per mission - no
-  compiler: the `LevelDesc` (menu name) and `MapName` (ASCII data exports), plus the UTF-16
+  `GetModuleFileName` at load, and forwards every call into `OP2LuaCore.dll`. The tools (OP2LuaEditor's Save,
+  `op2lua-newmission`, `new-mission.ps1`, the converters) copy this prebuilt binary and **write each mission's
+  values at its exports** - no compiler: `LevelDesc` (menu name), `MapName`, `TechtreeName`, `DescBlock` (type,
+  players, max tech level, unit-only) and `DescBlockEx` (multiplayer AI players), plus the UTF-16
   `FileDescription` in its version resource (so Windows Properties show the mission's name under
-  `OP2Lua Mission` / `Outpost Universe`). The code is identical for every mission.
+  `OP2Lua Mission` / `Outpost Universe`). The code is identical for every mission; the placement's header holds
+  the same values, and the editors and `op2lua-newmission --dll-from` build the DLL from it.
 
 What this buys us versus the hook approach: **no op2ext module, no `Patcher`, no `capstone.dll` runtime
 dependency.** OP2 discovers the stub like any other mission DLL.
@@ -116,7 +118,7 @@ the same script), and the libraries' and bindings' values by their path.
 ### Per-mission lifecycle
 
 ```
-OP2 scans maps\* → reads each stub's static DescBlock (name + numPlayers, patched by the converter)
+OP2 scans maps\* → reads each stub's exports (name, type, players ..., written by the tools)
                  → builds the menu
 player picks a mission → OP2 LoadLibrary's the stub
   stub GetSaveRegions → the core lets go of the previous mission and gives the game a save region
@@ -173,12 +175,13 @@ like this (see `op2luasdk/samples/hold-the-line`):
 return {
   -- mission metadata for the editor / author reference. NOTE: name + map here do NOT drive the
   -- game - OP2 reads LevelDesc + MapName baked into the stub DLL before any Lua runs. The core
-  -- warns if this map= disagrees with the DLL's baked MapName. Re-patch the DLL to change either.
+  -- warns if this map= disagrees with the DLL's baked MapName. Saving the mission in OP2LuaEditor (or
+  -- op2lua-newmission --dll-from) writes the header's values into the DLL.
   name = "Hold the Line",
   map  = "eden01.map",
   tech = "MULTITEK.TXT",
   type = "Colony",            -- Colony | MultiLastOneStanding | ... (see OPM_FORMAT)
-  max_tech = 12,
+  max_tech = 12, players_count = 2,   -- unit_only, ai_players too, when set
 
   -- Optional: a multiplayer mission leaves it out, so the lobby's colonies and colours stand
   -- (players[] still holds every player in the game).
@@ -230,7 +233,8 @@ appear in the editor, the `.opm`, the `.lua`, and the in-game status bar.
 
 - **Authoring tools**: where most authoring value lives. OP2LuaEditor (VB.NET, and its Rust
   rewrite in `op2lua-editor-rust/` for Windows, Linux and macOS) edits `placement.lua` over the
-  map and patches the stub's name, map and `DescBlock`; `op2lua-newmission` scaffolds missions; the
+  map and builds the mission DLL from its header on every save; `op2lua-newmission` scaffolds missions and
+  rebuilds a DLL from a placement (`--dll-from`); the
   converters (`.opm`, a stock mission DLL with `op2dll lua`) write `placement.lua` from what exists.
 - **C++ side** (this repo): two DLLs - a tiny forwarding stub and a thin, deterministic Lua host.
 - **Missions**: data + logic, both Lua, no per-mission compile.

@@ -4,10 +4,11 @@
 // standard OP2 mission interface and forwards every call into OP2LuaCore.dll, which runs the
 // mission's Lua. It carries NO Lua/sol2/Tethys runtime itself.
 //
-// The DescBlock / LevelDesc / MapName / TechtreeName below are PLACEHOLDERS. The converter
-// (OP2OpmTools) clones this DLL and byte-patches those bytes from the .opm metadata so OP2's
-// static mission-list scan shows the right name/map/players. The code is identical for every
-// mission; only that data differs.
+// The LevelDesc / MapName / TechtreeName / DescBlock / DescBlockEx below are PLACEHOLDERS. The
+// tools (OP2LuaEditor's Save, op2lua-newmission, op2dll's converter) copy this DLL and write each
+// mission's values at those exports, so OP2's mission-list scan shows the right name, map, type and
+// players. They write into the file's data, so each export must keep its bytes in the file (not in
+// .bss). The code is identical for every mission; only that data differs.
 //
 // On load, the stub locates its own folder (where its mission.lua / placement.lua live) and
 // passes it to the core.
@@ -24,12 +25,12 @@
 using namespace Tethys::TethysAPI;
 using Tethys::ibool;
 
-// ---- Mission metadata exports (PATCHED PER-MISSION by the converter) ------------------------
+// ---- Mission metadata exports (written per mission by the tools) ----------------------------
 MISSION_API char      LevelDesc[1024]    = "OP2Lua mission (unpatched template)";
 MISSION_API char      MapName[1024]      = "eden01.map";
 MISSION_API char      TechtreeName[1024] = "MULTITEK.TXT";
-MISSION_API ModDesc   DescBlock          = ModDesc(MissionType::Colony, 2, 12, 0);  // type + numPlayers patched per-mission (op2lua-newmission --type/--players)
-MISSION_API ModDescEx DescBlockEx        = {};
+MISSION_API ModDesc   DescBlock          = ModDesc(MissionType::Colony, 2, 12, 0);  // type, players, max tech level, unit-only
+MISSION_API ModDescEx DescBlockEx        = {};  // numMultiplayerAIs (the built stub keeps it in .data)
 
 // ---- Stub plumbing --------------------------------------------------------------------------
 namespace {

@@ -1,7 +1,7 @@
 # OP2Lua Mission File Format
 
 The files an OP2Lua mission is made of, what OP2LuaCore reads from each, and in what order. This is the reference
-for `<Mission>.placement.lua`; the functions a mission script calls are in [API.md](API.md). As of v0.8.12.
+for `<Mission>.placement.lua`; the functions a mission script calls are in [API.md](API.md). As of v0.8.14.
 
 ## The files
 
@@ -50,7 +50,7 @@ the mission list shows and which map loads:
 | `MapName` | `char[1024]` | The `.map` file the game loads. |
 | `TechtreeName` | `char[1024]` | The tech tree file (`MULTITEK.TXT` for the standard tree). |
 | `DescBlock` | 4 ints | `missionType`, `numPlayers`, `maxTechLevel`, `unitMission`. |
-| `DescBlockEx` | struct | Extended settings; all zero in the stub. |
+| `DescBlockEx` | 8 ints | `numMultiplayerAIs`, the computer players a multiplayer game adds, then 7 reserved; all zero in the stub. |
 
 `missionType` is the list the mission appears under:
 
@@ -73,9 +73,11 @@ on the other types it counts every player, computer players included. `maxTechLe
 The stub also exports the usual mission entry points (`InitProc`, `AIProc`, `GetSaveRegions`, the `On*` hooks)
 and a do-nothing `OP2LuaTrigger`, which the core's own triggers name.
 
-To change the name, map, type or player count, patch the DLL: OP2LuaEditor's Mission Properties does it, and so
-does `op2lua-newmission` (`--map`, `--type`, `--players`; the SDK's older Linux build has `--map` only) for a new
-mission.
+The tools write each of these values at its export in a copy of the stub, so they never search the DLL for an old
+value: OP2LuaEditor's Save Mission and Mission Properties build the DLL from the placement's header (below), and
+`op2lua-newmission` takes them as options for a new mission (`--map`, `--tech`, `--type`, `--players`,
+`--max-tech`, `--unit-only`, `--ai-players`; the SDK's older Linux build has `--map` only) or builds an existing
+mission's DLL from its header (`--dll-from <Base>.placement.lua`). Both editors and the tool write the same bytes.
 
 ## Coordinates
 
@@ -142,8 +144,13 @@ set up, so it should build data and not call the game.
 | `type` | The tools (names in the table above). The game uses the DLL's `DescBlock`. |
 | `max_tech` | The tools. The game uses the DLL's `DescBlock`. |
 | `players_count` | The tools. The game uses the DLL's `DescBlock`. |
+| `unit_only` | The tools (`true` or `false`; left out is `false`). The game uses the DLL's `DescBlock`. |
+| `ai_players` | The tools (left out is 0). The game uses the DLL's `DescBlockEx`. |
 
-OP2LuaEditor's Mission Properties keeps the header and the DLL in step (name, map, type, players, max tech).
+The header holds what the mission DLL says, and the tools keep the two in step: OP2LuaEditor's Save Mission and
+Mission Properties, and `op2lua-newmission --dll-from`, build the DLL from the header (a key the header lacks is
+taken from the DLL already there), keep the old DLL as `.bak` and leave alone a DLL that isn't an OP2Lua stub.
+They write `unit_only` and `ai_players` only when they are set.
 
 ### `players`
 
@@ -397,7 +404,7 @@ mission DLL's file name) comes the u32 size of the region, then the region. All 
 |---|---|
 | 8 bytes | `OP2LuaSv` |
 | u32 | format: 1 |
-| string | the OP2Lua version that saved (e.g. `0.8.12`) |
+| string | the OP2Lua version that saved (e.g. `0.8.14`) |
 | string | the mission: its DLL's name without `.dll` (letters, digits, `-`, `_`) |
 | u8 | 0: no script was running; 1: the script's state follows; 2: the state couldn't be saved, and a string says why |
 

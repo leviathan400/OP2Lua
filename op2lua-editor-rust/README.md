@@ -50,16 +50,21 @@ region's name and corners. A Lynx, Panther or Tiger always carries a weapon (Las
 **Saving.** File > Save mission (Ctrl+S) writes the units and regions back into `placement.lua` and changes nothing
 else: every other field of every unit (direction, health, cargo, ...), every other table, every comment and every
 blank line stays as it was. Deleting a unit renumbers the beacons' `after = n` so each still follows the same unit.
-The previous file is kept as `<file>.bak`. If the file changed on disk while it was open, the editor reloads it (no
-edits here) or asks which to keep. Closing the window, or opening something else, with unsaved edits asks first.
+The previous file is kept as `<file>.bak`. Save also writes the mission DLL from the placement's header (see
+*Properties*), so the DLL always holds what the editor shows. If the file changed on disk while it was open, the
+editor reloads it (no edits here) or asks which to keep. Closing the window, or opening something else, with unsaved edits asks first.
 
 **Mission menu.**
 
-- *Properties* edits the header of `placement.lua` (name, map, tech file, type, max tech level, players) and patches
-  the mission DLL beside it (`c<Base>.dll` or `<Base>.dll`) to match: Outpost 2 reads the name, map, type and player
-  count from the DLL before any Lua runs. Both files keep a `.bak`.
-- *New mission* writes a mission into the game's `OPU\maps\LUA`: the bundled stub DLL patched with its name, map,
-  type, players and max tech, and starter scripts (a two-player fight, or a lobby skeleton for a multiplayer type).
+- *Properties* edits everything the mission DLL tells the game, kept in `placement.lua`'s header: name, map, tech tree
+  file, type, max tech level, players, unit-only and a multiplayer game's AI players (`unit_only` and `ai_players`
+  only when set). Outpost 2 reads them from the DLL before any Lua runs, so OK and Save build the DLL beside the
+  mission (`c<Base>.dll` or `<Base>.dll`, or a new one) from them: a copy of the bundled stub with each value
+  written at its export. Both files keep a `.bak`. Where the DLL holds other values (a DLL left at the stub's max
+  tech level 12, say), opening the mission and the dialog say so, and the next save replaces them. A DLL that isn't
+  an OP2Lua stub is left alone.
+- *New mission* writes a mission into the game's `OPU\maps\LUA`: the DLL built from its properties, and starter
+  scripts (a two-player fight, or a lobby skeleton for a multiplayer type).
   A Colony mission's DLL is `c<Base>.dll`, so Outpost 2 lists it under Colony Games.
 - *Import regions from...* takes another placement file's regions; *Save regions into...* and *Save units into...*
   write this mission's table into another placement file (the rest of that file kept, with a `.bak`).
@@ -95,8 +100,8 @@ cargo test
 ```
 
 The tests cover reading and rewriting `placement.lua` (round trips, edits, deletes, beacons' `after`), the tools
-driven by synthetic mouse input through egui, saving, the DLL patches (read back with op2-formats' mission-DLL reader),
-New Mission's files, Test in OP2's copy plan and the exported image. Two need data and are skipped without it:
+driven by synthetic mouse input through egui, saving, the DLL built from the properties (read back with
+op2-formats' mission-DLL reader), New Mission's files, Test in OP2's copy plan and the exported image. Two need data and are skipped without it:
 
 - `OP2LUA_PLACEMENT_DIRS` (folders separated by `;`): every `.placement.lua` under them must read and write back
   byte for byte.
@@ -114,8 +119,8 @@ New Mission's files, Test in OP2's copy plan and the exported image. Two need da
 | `src/mission.rs` | An open mission: its files, units, regions and map objects; save, import, export of tables. |
 | `src/editor.rs` | The tools: drawing the mission over the map, mouse handling, the side panel. |
 | `src/units.rs` | Unit types, footprints, dozed borders, labels, player and region colours. |
-| `src/props.rs` | Mission properties, the DLL patch that goes with them, New Mission's files. |
-| `src/dll.rs` | Patching a mission DLL (name, map, DescBlock, version resource). |
+| `src/props.rs` | Mission properties, the mission DLL built from them, New Mission's files. |
+| `src/dll.rs` | Writing a mission DLL's exports (LevelDesc, MapName, TechtreeName, DescBlock, DescBlockEx) and version resource. |
 | `src/launch.rs` | Test in OP2, and the game's OP2LuaCore version. |
 | `src/export.rs` | The exported image with the mission drawn on it. |
 | `src/sound.rs` | The beep when a map loads. |

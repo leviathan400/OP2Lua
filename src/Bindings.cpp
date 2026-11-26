@@ -304,7 +304,7 @@ void Game_Sound(sol::object sound, sol::optional<int> toPlayer) {
 int Game_Rand(int n) { return (n >= 0) ? Game::GetRand(n) : 0; }
 int Game_Tick()      { return Game::Tick(); }
 
-// game.version() -> "0.8.12", "2026-11-17 11:57:19": the running OP2LuaCore's version and when its DLL was built.
+// game.version() -> "0.8.14", "2026-11-17 11:57:19": the running OP2LuaCore's version and when its DLL was built.
 std::tuple<std::string, std::string> Game_Version() { return { OP2LUA_VERSION, ::OP2Lua::Mission::BuildTime() }; }
 
 // game.op2_version() -> the version the running Outpost 2 goes by (TApp::Version: "1.4.0.1" under OPU 1.4.x), and
@@ -1028,6 +1028,68 @@ void ReportBadTech(const char* fn, int techId) {
                    kDefaultMsgSound, Tethys::AllPlayers);
 }
 
+bool ValidPlayerNum(int num);  // below
+
+// player:techs() -> the ids of the topics the player has, in the tech tree's order (sorted by id): what a campaign
+// mission carries over for the next to give back with mark_research.
+sol::table Player_Techs(int num, sol::this_state ts) {
+  sol::state_view L(ts);
+  sol::table out = L.create_table();
+  Tethys::Research*const r = Tethys::Research::GetInstance();
+  if ((r == nullptr) || !ValidPlayerNum(num) || (r->ppTechInfos_ == nullptr)) return out;
+  int n = 1;
+  for (int i = 0; i < r->numTechs_; ++i) {
+    const Tethys::TechInfo*const t = r->ppTechInfos_[i];
+    if ((t != nullptr) && t->playerHasTechMask.Get(num)) out[n++] = t->techID;
+  }
+  return out;
+}
+
+// The player's morale record (PlayerImpl +0x34, 18 words), the block the game itself carries from one campaign mission
+// to the next (LoadCampaignState 0x4899C0 copies all of it into the local player before the mission's setup). Named
+// as the economy notes name them; `level`, `event`, `morale` and `trend` persist from one morale update to the next
+// (every 256 ticks, on the player's slot), the rest are the inputs each update works out again.
+constexpr const char* kMoraleFields[] = {
+  "level", "event", "zeroed", "morale", "trend", "residence_demand", "food_supply", "disabled_ratio",
+  "rec_forum_demand", "forum_demand", "med_center_demand", "nursery", "university", "warning_systems",
+  "dirt_prevention", "unoccupied", "scientists_as_workers", "gorf",
+};
+static_assert(sizeof(kMoraleFields) / sizeof(kMoraleFields[0]) * 4 == sizeof(Tethys::MoraleState),
+              "a name for each word of MoraleState");
+
+int32_t* MoraleWords(int num) {
+  auto*const impl = ValidPlayerNum(num) ? _Player(num).GetImpl() : nullptr;
+  return impl ? reinterpret_cast<int32_t*>(&impl->moraleState_) : nullptr;
+}
+
+sol::table Player_MoraleState(int num, sol::this_state ts) {
+  sol::state_view L(ts);
+  sol::table out = L.create_table();
+  if (const int32_t*const w = MoraleWords(num))
+    for (size_t i = 0; i < std::size(kMoraleFields); ++i) out[kMoraleFields[i]] = w[i];
+  return out;
+}
+
+// set_morale_state(t): writes each field `t` names (whole numbers); others keep their values. An unknown name is an
+// error, so a misspelt field isn't dropped without a word.
+void Player_SetMoraleState(int num, const sol::table& t) {
+  int32_t*const w = MoraleWords(num);
+  if (w == nullptr) return;
+  for (const auto& kv : t) {
+    const std::string key = kv.first.is<std::string>() ? kv.first.as<std::string>() : std::string();
+    const auto*const it = std::find_if(std::begin(kMoraleFields), std::end(kMoraleFields),
+                                       [&](const char* n) { return key == n; });
+    if (it == std::end(kMoraleFields)) throw sol::error("set_morale_state: no morale field '" + key + "'");
+    if (!kv.second.is<int>()) throw sol::error("set_morale_state: '" + key + "' isn't a whole number");
+    w[it - std::begin(kMoraleFields)] = kv.second.as<int>();
+  }
+}
+
+const char* MoraleLevelName(int level) {
+  static const char* const names[] = { "Excellent", "Good", "Fair", "Poor", "Terrible" };
+  return (level >= 0 && level < 5) ? names[level] : "Unknown";
+}
+
 // ---- read-only queries for computer-player scripts (costs, balances, research, survey, what was ordered) ----
 // Each reads the game's own state and changes nothing, so they are safe in a multiplayer game: every machine reads
 // the same values.
@@ -1243,6 +1305,32 @@ static void LaunchAtPixel(Unit u, int px, int py) {
   if (owner) owner->ProcessCommandPacket(packet);
 }
 static bool GuardedLaunchAtPixel(Unit u, int px, int py) { __try { LaunchAtPixel(u, px, py); return true; } __except (1) { return false; } }
+// Unit::DoLaunch(px, py, force) as Outpost2.exe exports it (?DoLaunch@Unit@@QAEXHHH@Z, 0x476580), the call Plymouth 12's
+// SpidersPresent makes with force 1 (p12.dll 0x11002C99) to launch the captured RLV from an EMPed Spaceport. The
+// command packet LaunchAtPixel sends is refused while the Spaceport is EMPed.
+static bool GuardedForcedLaunchAtPixel(Unit u, int px, int py) {
+  using DoLaunchFn = void(__thiscall*)(Unit*, int, int, int);
+  __try { reinterpret_cast<DoLaunchFn>(0x476580)(&u, px, py, 1); return true; } __except (1) { return false; }
+}
+// Unit::SetFactoryCargo(bay, type, cargo) as Outpost2.exe exports it (0x476040), the call the stock missions make. On a
+// Spaceport it also puts a rocket on the pad (Plymouth 12's setup loads the Eden Spaceport's RLV with bay 0), which
+// TethysAPI's SetFactoryCargo, writing only the bay arrays, doesn't.
+static bool GuardedGameSetFactoryCargo(Unit u, int bay, MapID type, MapID cargo) {
+  using Fn = void(__thiscall*)(Unit*, int, MapID, MapID);
+  __try { reinterpret_cast<Fn>(0x476040)(&u, bay, type, cargo); return true; } __except (1) { return false; }
+}
+// _Player::GetRLVCount (0x477240) and _Player::CaptureRLV(src) (0x477130), Outpost2.exe's exports, as Plymouth 12's
+// TryCapture calls them (0x11002CF0): once the computer player has the launched RLV, the human player takes it.
+static int GuardedRLVCount(int num) {
+  using Fn = int(__thiscall*)(const _Player*);
+  const _Player pl(num);
+  __try { return reinterpret_cast<Fn>(0x477240)(&pl); } __except (1) { return 0; }
+}
+static bool GuardedCaptureRLV(int num, int src) {
+  using Fn = void(__thiscall*)(_Player*, int);
+  _Player pl(num);
+  __try { reinterpret_cast<Fn>(0x477130)(&pl, src); return true; } __except (1) { return false; }
+}
 static bool GuardedTransferCargo(Unit u, int bay)      { __try { u.DoTransferCargo(bay); return true; } __except (1) { return false; } }
 // Unit::IsBusy as Outpost2.exe exports it (0x475E60), the call the stock missions make: whether the unit has a
 // command (MapObject +0x21, Tethys's command_), e.g. a Spaceport until its rocket is built. Tethys's IsBusy reads the
@@ -2138,7 +2226,15 @@ void RegisterBindings(sol::state& lua) {
       // factory:set_factory_cargo(bay, type [, cargoOrWeapon]) - preload a kit into a 1-based bay (1..6).
       "set_factory_cargo", [](Unit& u, int bay, const std::string& type, sol::optional<std::string> extra) {
                         const MapID t = MapIdFromName(type);   // a Guard Post kit's weapon is its turret version
-                        if (u.IsLive()) u.SetFactoryCargo(bay - 1, t, extra ? WeaponFor(t, MapIdFromName(*extra)) : MapID::None); },
+                        if (!u.IsLive()) return;
+                        const MapID c = extra ? WeaponFor(t, MapIdFromName(*extra)) : MapID::None;
+                        // A Spaceport's bay 1 is its pad: the game's own call loads it.
+                        if (u.GetType() == MapID::Spaceport) {
+                          if (!GuardedGameSetFactoryCargo(u, bay - 1, t, c))
+                            LOG_MISSION(WARNING) << "set_factory_cargo: the game faulted";
+                        } else {
+                          u.SetFactoryCargo(bay - 1, t, c);
+                        } },
       // factory:transfer_cargo(bay) - move the 1-based bay's cargo to the docked vehicle. ONLY call when
       // a vehicle is actually on the dock (see unit_on_dock) - calling it otherwise crashes OP2.
       "transfer_cargo", [](Unit& u, int bay) {
@@ -2283,8 +2379,13 @@ void RegisterBindings(sol::state& lua) {
       // ---- spaceport / garage / lights ----
       "launch",         [](Unit& u, sol::object target) { if (u.IsLive())
                           GuardedLaunch(u, target.valid() ? LocFrom(target) : Location()); },
-      // launch_at_pixel(px, py): launch at a map pixel (see LaunchAtPixel); launch(target) aims at a tile's centre.
-      "launch_at_pixel", [](Unit& u, int px, int py) { if (u.IsLive()) GuardedLaunchAtPixel(u, px, py); },
+      // launch_at_pixel(px, py[, force]): launch at a map pixel (see LaunchAtPixel); force launches from an EMPed
+      // Spaceport, as the game's DoLaunch(px, py, 1). launch(target) aims at a tile's centre.
+      "launch_at_pixel", [](Unit& u, int px, int py, sol::optional<bool> force) {
+        if (!u.IsLive()) return;
+        const bool ok = force.value_or(false) ? GuardedForcedLaunchAtPixel(u, px, py) : GuardedLaunchAtPixel(u, px, py);
+        if (!ok) LOG_MISSION(WARNING) << "unit:launch_at_pixel: the game faulted; nothing launched";
+      },
       // infect(): the Blight takes the unit (the game's Unit::DoInfect).
       "infect",         [](Unit& u) { if (u.IsLive()) GameDoInfect(u); },
       // No longer a special target (Unit::ClearSpecialTarget, 0x475F90, the game's own).
@@ -2378,6 +2479,17 @@ void RegisterBindings(sol::state& lua) {
       // its last update worked them out from the colony's storage.
       "ore_capacity",      sol::property([](const LuaPlayer& p) { const auto* i = _Player(p.num).GetImpl(); return i ? i->maxCommonOre_ : 0; }),
       "rare_ore_capacity", sol::property([](const LuaPlayer& p) { const auto* i = _Player(p.num).GetImpl(); return i ? i->maxRareOre_ : 0; }),
+      // Morale 0-99 and its level, read and written. The game moves morale at most 5 toward what the colony earns at
+      // each morale update and works the level out from it then; a value set here is where it moves from.
+      "morale",       sol::property(
+        [](const LuaPlayer& p) { const int32_t* w = MoraleWords(p.num); return w ? int(w[3]) : 0; },
+        [](LuaPlayer& p, int v) { if (int32_t* w = MoraleWords(p.num)) w[3] = std::clamp(v, 0, 99); }),
+      "morale_level", sol::property(
+        [](const LuaPlayer& p) -> std::string { const int32_t* w = MoraleWords(p.num); return MoraleLevelName(w ? int(w[0]) : -1); },
+        [](LuaPlayer& p, const std::string& n) { if (int32_t* w = MoraleWords(p.num)) w[0] = static_cast<int32_t>(MoraleFromName(n)); }),
+      // morale_state() / set_morale_state(t): the whole morale record, as the game carries it between campaign missions.
+      "morale_state",     [](const LuaPlayer& p, sol::this_state ts) { return Player_MoraleState(p.num, ts); },
+      "set_morale_state", [](LuaPlayer& p, const sol::table& t) { Player_SetMoraleState(p.num, t); },
       // cost(type [, weapon]) -> { common=, rare= } (see Player_Cost).
       "cost",       [](const LuaPlayer& p, const std::string& t, sol::object w, sol::this_state ts) { return Player_Cost(p.num, t, w, ts); },
       // The difficulty level chosen in the Colony Games menu, as "Easy"/"Normal"/"Hard". Lets a mission
@@ -2393,6 +2505,14 @@ void RegisterBindings(sol::state& lua) {
       // launched Spaceport cargo rocket the player has. Drives Starship-colony evacuation victories.
       "satellite_count", [](const LuaPlayer& p, const std::string& type) {
         return _Player(p.num).GetSatelliteCount(MapIdFromName(type)); },
+      // player.rlv_count - the RLVs the player has (the game's _Player::GetRLVCount).
+      "rlv_count", sol::property([](const LuaPlayer& p) { return GuardedRLVCount(p.num); }),
+      // player:capture_rlv(from) - the player takes an RLV from `from` (a Player or 1-7) when it has one (the game's
+      // _Player::CaptureRLV).
+      "capture_rlv", [](LuaPlayer& p, sol::object from) {
+        const int src = PlayerArg(from, "capture_rlv");
+        if (src >= 0 && !GuardedCaptureRLV(p.num, src)) LOG_MISSION(WARNING) << "player:capture_rlv: the game faulted";
+      },
       // The EDWARD and Solar Power Satellites the player has in orbit (0-15 each), read and written. With an EDWARD
       // Satellite up every mining beacon counts as surveyed for the player (MiningBeacon::IsSurveyed 0x4055F0), so its
       // Robo-Miners need no Robo-Surveyor.
@@ -2445,6 +2565,7 @@ void RegisterBindings(sol::state& lua) {
                            if (int*const v = UnitStatPtr(p.num, type, field, "set_unit_stat")) *v = value; },
       "set_tech_level",  [](LuaPlayer& p, int level)  { _Player(p.num).SetTechLevel(level); },
       "can_research",    [](const LuaPlayer& p, int techId) { return Player_CanResearch(p.num, techId); },
+      "techs",           [](const LuaPlayer& p, sol::this_state ts) { return Player_Techs(p.num, ts); },
 
       // ---- alliances ----
       "is_ally",            [](const LuaPlayer& p, sol::object o) { const int n = PlayerNumFrom(o);

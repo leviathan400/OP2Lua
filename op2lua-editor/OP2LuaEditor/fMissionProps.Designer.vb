@@ -35,10 +35,16 @@ Partial Class fMissionProps
         Me.numMaxTech = New System.Windows.Forms.NumericUpDown()
         Me.lblPlayers = New System.Windows.Forms.Label()
         Me.numPlayers = New System.Windows.Forms.NumericUpDown()
+        Me.chkUnitOnly = New System.Windows.Forms.CheckBox()
+        Me.lblAiPlayers = New System.Windows.Forms.Label()
+        Me.numAiPlayers = New System.Windows.Forms.NumericUpDown()
+        Me.lblDllInfo = New System.Windows.Forms.Label()
+        Me.lblNote = New System.Windows.Forms.Label()
         Me.btnOK = New System.Windows.Forms.Button()
         Me.btnCancel = New System.Windows.Forms.Button()
         CType(Me.numMaxTech, System.ComponentModel.ISupportInitialize).BeginInit()
         CType(Me.numPlayers, System.ComponentModel.ISupportInitialize).BeginInit()
+        CType(Me.numAiPlayers, System.ComponentModel.ISupportInitialize).BeginInit()
         Me.SuspendLayout()
         '
         'lblName
@@ -89,7 +95,7 @@ Partial Class fMissionProps
         Me.lblTech.Name = "lblTech"
         Me.lblTech.Size = New System.Drawing.Size(100, 20)
         Me.lblTech.TabIndex = 5
-        Me.lblTech.Text = "Tech file:"
+        Me.lblTech.Text = "Tech tree file:"
         Me.lblTech.TextAlign = System.Drawing.ContentAlignment.MiddleRight
         '
         'txtTech
@@ -153,23 +159,65 @@ Partial Class fMissionProps
         Me.numPlayers.TabIndex = 12
         Me.numPlayers.Value = New Decimal(New Integer() {1, 0, 0, 0})
         '
+        'chkUnitOnly
+        '
+        Me.chkUnitOnly.Location = New System.Drawing.Point(120, 196)
+        Me.chkUnitOnly.Name = "chkUnitOnly"
+        Me.chkUnitOnly.Size = New System.Drawing.Size(320, 20)
+        Me.chkUnitOnly.TabIndex = 13
+        Me.chkUnitOnly.Text = "Unit-only mission (most reports off)"
+        Me.chkUnitOnly.UseVisualStyleBackColor = True
+        '
+        'lblAiPlayers
+        '
+        Me.lblAiPlayers.Location = New System.Drawing.Point(12, 225)
+        Me.lblAiPlayers.Name = "lblAiPlayers"
+        Me.lblAiPlayers.Size = New System.Drawing.Size(100, 20)
+        Me.lblAiPlayers.TabIndex = 14
+        Me.lblAiPlayers.Text = "AI players:"
+        Me.lblAiPlayers.TextAlign = System.Drawing.ContentAlignment.MiddleRight
+        '
+        'numAiPlayers
+        '
+        Me.numAiPlayers.Location = New System.Drawing.Point(120, 222)
+        Me.numAiPlayers.Maximum = New Decimal(New Integer() {5, 0, 0, 0})
+        Me.numAiPlayers.Name = "numAiPlayers"
+        Me.numAiPlayers.Size = New System.Drawing.Size(80, 20)
+        Me.numAiPlayers.TabIndex = 15
+        '
+        'lblDllInfo
+        '
+        Me.lblDllInfo.Location = New System.Drawing.Point(12, 254)
+        Me.lblDllInfo.Name = "lblDllInfo"
+        Me.lblDllInfo.Size = New System.Drawing.Size(428, 18)
+        Me.lblDllInfo.TabIndex = 16
+        Me.lblDllInfo.Text = "These go into the mission DLL, which Save Mission writes with the placement."
+        '
+        'lblNote
+        '
+        Me.lblNote.ForeColor = System.Drawing.Color.DarkOrange
+        Me.lblNote.Location = New System.Drawing.Point(12, 274)
+        Me.lblNote.Name = "lblNote"
+        Me.lblNote.Size = New System.Drawing.Size(428, 44)
+        Me.lblNote.TabIndex = 17
+        '
         'btnOK
         '
         Me.btnOK.DialogResult = System.Windows.Forms.DialogResult.OK
-        Me.btnOK.Location = New System.Drawing.Point(265, 208)
+        Me.btnOK.Location = New System.Drawing.Point(265, 326)
         Me.btnOK.Name = "btnOK"
         Me.btnOK.Size = New System.Drawing.Size(85, 28)
-        Me.btnOK.TabIndex = 13
+        Me.btnOK.TabIndex = 18
         Me.btnOK.Text = "OK"
         Me.btnOK.UseVisualStyleBackColor = True
         '
         'btnCancel
         '
         Me.btnCancel.DialogResult = System.Windows.Forms.DialogResult.Cancel
-        Me.btnCancel.Location = New System.Drawing.Point(355, 208)
+        Me.btnCancel.Location = New System.Drawing.Point(355, 326)
         Me.btnCancel.Name = "btnCancel"
         Me.btnCancel.Size = New System.Drawing.Size(85, 28)
-        Me.btnCancel.TabIndex = 14
+        Me.btnCancel.TabIndex = 19
         Me.btnCancel.Text = "Cancel"
         Me.btnCancel.UseVisualStyleBackColor = True
         '
@@ -179,9 +227,14 @@ Partial Class fMissionProps
         Me.AutoScaleDimensions = New System.Drawing.SizeF(6.0!, 13.0!)
         Me.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font
         Me.CancelButton = Me.btnCancel
-        Me.ClientSize = New System.Drawing.Size(452, 252)
+        Me.ClientSize = New System.Drawing.Size(452, 370)
         Me.Controls.Add(Me.btnCancel)
         Me.Controls.Add(Me.btnOK)
+        Me.Controls.Add(Me.lblNote)
+        Me.Controls.Add(Me.lblDllInfo)
+        Me.Controls.Add(Me.numAiPlayers)
+        Me.Controls.Add(Me.lblAiPlayers)
+        Me.Controls.Add(Me.chkUnitOnly)
         Me.Controls.Add(Me.numPlayers)
         Me.Controls.Add(Me.lblPlayers)
         Me.Controls.Add(Me.numMaxTech)
@@ -204,6 +257,7 @@ Partial Class fMissionProps
         Me.Text = "Mission Properties"
         CType(Me.numMaxTech, System.ComponentModel.ISupportInitialize).EndInit()
         CType(Me.numPlayers, System.ComponentModel.ISupportInitialize).EndInit()
+        CType(Me.numAiPlayers, System.ComponentModel.ISupportInitialize).EndInit()
         Me.ResumeLayout(False)
         Me.PerformLayout()
 
@@ -222,6 +276,11 @@ Partial Class fMissionProps
     Friend WithEvents numMaxTech As System.Windows.Forms.NumericUpDown
     Friend WithEvents lblPlayers As System.Windows.Forms.Label
     Friend WithEvents numPlayers As System.Windows.Forms.NumericUpDown
+    Friend WithEvents chkUnitOnly As System.Windows.Forms.CheckBox
+    Friend WithEvents lblAiPlayers As System.Windows.Forms.Label
+    Friend WithEvents numAiPlayers As System.Windows.Forms.NumericUpDown
+    Friend WithEvents lblDllInfo As System.Windows.Forms.Label
+    Friend WithEvents lblNote As System.Windows.Forms.Label
     Friend WithEvents btnOK As System.Windows.Forms.Button
     Friend WithEvents btnCancel As System.Windows.Forms.Button
 End Class

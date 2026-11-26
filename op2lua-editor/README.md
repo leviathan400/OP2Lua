@@ -20,13 +20,19 @@ write the `<Name>.lua` (the logic), and `OP2LuaCore.dll` runs them in-game.
 
 - **Open / load a map** as the editing backdrop (reads OP2 1.4.1 tile graphics from the well BMPs).
 - **Place units** for each player (1-6) and **draw regions**, round-tripped to/from `placement.lua`. Saving
-  rewrites only what you changed: every other field, comment and line of the file stays as it was.
+  rewrites only what you changed: every other field, comment and line of the file stays as it was. Save Mission also
+  writes the mission DLL from the placement's header (below), so the DLL always holds what the editor shows.
 - **Beacons, walls, tubes and markers** from `placement.lua` are drawn on the map for context, with the ring of dozed
   ground around every structure and the two tubes the game lays beside each structure with tube connections (east of
   it on its location's row, south of it on its location's column).
-- **Mission properties** - name, map, tech, mission type (Colony, Tutorial, AutoDemo or a multiplayer type),
-  players, max tech level; the mission DLL is patched to match.
-- **New Mission** scaffolding - clones the stub DLL and patches its name, map, type and player count, writes
+- **Mission properties** - everything the mission DLL tells the game: name, map, tech tree file, mission type
+  (Colony, Tutorial, AutoDemo, a multiplayer type or a campaign number), players, max tech level, unit-only, and a
+  multiplayer game's AI players. They are kept in `placement.lua`'s header (`unit_only` and `ai_players` only when
+  set), and OK and Save Mission build the DLL from them: a copy of the bundled stub with each value written at its
+  export, the old DLL kept as `.bak`. Where the DLL beside the mission holds other values (a DLL left at the stub's
+  max tech level 12, say), the dialog says so and the next save replaces them. A DLL that isn't an OP2Lua stub is
+  left alone.
+- **New Mission** scaffolding - builds the mission DLL from its properties, writes
   skeleton scripts (a multiplayer type gets a lobby-driven skeleton), straight into the game's `OPU\maps\LUA`. A
   Colony mission's DLL is `c<Base>.dll`, so Outpost 2 lists it under Colony Games.
 - **Test in OP2 (F5)** - copies the open mission into `OPU\maps\LUA` and starts Outpost 2 straight into it

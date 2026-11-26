@@ -2,7 +2,7 @@
 '
 ' Reading and rewriting placement.lua as text, with no UI: the editor edits a file a person (or op2dll) wrote, so it
 ' changes only the tables it owns (units, regions) and leaves the rest - comments, formatting, fields it doesn't
-' know - as they were. Also the mission DLL's DescBlock (its mission type and player count).
+' know - as they were. Also the mission type names and finding a DLL export (MissionDll.vb builds the mission DLL).
 '
 ' Lua comments and strings are masked out (MaskLua) before any key or brace is matched, so a brace in a comment or a
 ' name doesn't throw the table bounds off.
@@ -484,7 +484,7 @@ Public Module PlacementText
         Return result
     End Function
 
-    ' ===== the mission DLL's DescBlock =====
+    ' ===== mission types and DLL exports =====
 
     ' A placement type name -> the DescBlock's MissionType. Both the SDK's names (MultiLastOneStanding, as op2dll
     ' writes them) and op2lua-newmission's --type names (LastOneStanding) are accepted, and a campaign mission's
@@ -508,18 +508,6 @@ Public Module PlacementText
     ' Land Rush, Space Race, Resource Race, Midas or Last One Standing: listed in the multiplayer lobby.
     Public Function IsMultiplayerType(name As String) As Boolean
         Return MissionTypeValue(name) <= -4
-    End Function
-
-    ' Write the mission type, player count and maximum tech level into a mission DLL's exported DescBlock
-    ' (ModDesc: missionType, numPlayers, maxTechLevel, unitMission, four ints). OP2 lists a mission by its type and
-    ' sizes the game by numPlayers, both from the DLL. Returns False if the DLL has no DescBlock export.
-    Public Function PatchDescBlock(buf() As Byte, missionType As Integer, players As Integer, maxTech As Integer) As Boolean
-        Dim at As Integer = ExportFileOffset(buf, "DescBlock")
-        If at < 0 OrElse at + 12 > buf.Length Then Return False
-        Array.Copy(BitConverter.GetBytes(missionType), 0, buf, at, 4)
-        Array.Copy(BitConverter.GetBytes(players), 0, buf, at + 4, 4)
-        Array.Copy(BitConverter.GetBytes(maxTech), 0, buf, at + 8, 4)
-        Return True
     End Function
 
     ' The file offset of a named export's data in a PE image, or -1.

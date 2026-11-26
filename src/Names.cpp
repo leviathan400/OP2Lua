@@ -64,6 +64,9 @@ const std::vector<std::pair<const char*, MapID>>& MapIdTable() {
       { "RareMetalsCargo", MapID::RareMetalsCargo }, { "CommonMetalsCargo", MapID::CommonMetalsCargo },
       { "FoodCargo", MapID::FoodCargo }, { "EvacuationModule", MapID::EvacuationModule },
       { "ChildrenModule", MapID::ChildrenModule },
+      // The Spaceport's two rockets ('SULV', 'RLV'): what unit.object_on_pad names and a count trigger counts (Eden 12
+      // counts the player's RLV).
+      { "SULV", MapID::SULV }, { "RLV", MapID::RLV },
   };
   return kTable;
 }

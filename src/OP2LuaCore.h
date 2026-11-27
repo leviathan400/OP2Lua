@@ -5,7 +5,7 @@
 // call here; this library does the actual Lua work. Args are passed as void* (the Tethys arg
 // structs) and cast back inside the core.
 
-#define OP2LUA_VERSION "0.8.18"
+#define OP2LUA_VERSION "0.8.19"
 
 #ifdef __cplusplus
 extern "C" {

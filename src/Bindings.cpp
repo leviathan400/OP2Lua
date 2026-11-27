@@ -310,7 +310,7 @@ void Game_Sound(sol::object sound, sol::optional<int> toPlayer) {
 int Game_Rand(int n) { return (n >= 0) ? Game::GetRand(n) : 0; }
 int Game_Tick()      { return Game::Tick(); }
 
-// game.version() -> "0.8.18", "2026-11-17 11:57:19": the running OP2LuaCore's version and when its DLL was built.
+// game.version() -> "0.8.19", "2026-11-17 11:57:19": the running OP2LuaCore's version and when its DLL was built.
 std::tuple<std::string, std::string> Game_Version() { return { OP2LUA_VERSION, ::OP2Lua::Mission::BuildTime() }; }
 
 // game.op2_version() -> the version the running Outpost 2 goes by (TApp::Version: "1.4.0.1" under OPU 1.4.x), and
@@ -1287,6 +1287,24 @@ static bool IssueOrderGuarded(DeferredOrder& o) {
   }
 }
 
+// group:remove_unit_guarded (since 0.8.19): ScGroup::RemoveUnit behind a fault guard. The ScGroup and Unit are made in
+// RemoveUnitPlain, so the __try has nothing to unwind. RemoveUnit (0x479BD0 -> 0x42BD60) doesn't check that the group
+// is the unit's: it unlinks the node the unit's own index names (MapObject +0x31) in this group's node table, so on a
+// group that still lists a unit another group has taken since (TakeUnit leaves it in the old list) it can read a free
+// node and fault (0x0042BDCA). A mission DLL built with an old MSVC whose catch(...) took faults went on past it
+// (Renegades q03.dll's group mover, 0x11007520).
+static void RemoveUnitPlain(int groupId, int unitId) {
+  Tethys::TethysAPI::ScGroup(groupId).RemoveUnit(Unit(unitId));
+}
+static bool GuardedRemoveUnit(int groupId, int unitId) {
+  __try {
+    RemoveUnitPlain(groupId, unitId);
+    return true;
+  } __except (1) {
+    return false;
+  }
+}
+
 // AI base-building commands, issued immediately. The AI's starting ConVecs / trucks / RoboMiner /
 // RoboSurveyor are long-aged by the time it acts, so the deferred-order safety (which protects
 // freshly-spawned units, see FlushUnitOrders) isn't needed here. We still SEH-guard the calls that
@@ -1626,6 +1644,27 @@ void RegisterGroupBindings(sol::state& lua) {
         return u.IsLive() ? sol::make_object(L, u) : sol::make_object(L, sol::lua_nil); },
       "take_unit",   [](LuaGroup& g, Unit u) { if (g.id >= 0 && u.IsValid()) ScGroup(g.id).TakeUnit(u); },
       "remove_unit", [](LuaGroup& g, Unit u) { if (g.id >= 0 && u.IsValid()) ScGroup(g.id).RemoveUnit(u); },
+      // remove_unit_guarded(u) (since 0.8.19): remove_unit behind a fault guard (GuardedRemoveUnit); false when the
+      // game's RemoveUnit faulted, which stops it where a guarded DLL's call stops. true for no group or unit.
+      "remove_unit_guarded", [](LuaGroup& g, Unit u) {
+        return (g.id >= 0 && u.IsValid()) ? GuardedRemoveUnit(g.id, u.GetID()) : true; },
+      // walk() (since 0.8.19): an iterator over the group's list as a mission's GroupEnumerator walks it, for
+      // `for u in group:walk() do ... end`. Each step gives a node's unit and moves to that node's next at once, as
+      // GroupEnumerator::GetNext does (0x47A850), so units removed or taken while walking change what comes next as
+      // they do for a DLL. `units` copies the list first instead.
+      "walk", [](LuaGroup& g, sol::this_state ts) {
+        sol::state_view L(ts);
+        const Tethys::ScGroupImpl::UnitNode* head = nullptr;
+        if (g.id >= 0)
+          if (const auto* impl = ScGroup(g.id).GetImpl()) head = impl->pUnitListHead_;
+        auto cursor = std::make_shared<const Tethys::ScGroupImpl::UnitNode*>(head);
+        return sol::make_object(L, [cursor](sol::variadic_args, sol::this_state s) -> sol::object {
+          sol::state_view V(s);
+          const Tethys::ScGroupImpl::UnitNode* n = *cursor;
+          if (n == nullptr) return sol::make_object(V, sol::lua_nil);
+          *cursor = n->pNext;
+          return sol::make_object(V, Unit(n->pUnit));
+        }); },
       // Every unit of `other` moves to this group (CES1's sixth wave takes fight group 3 whole).
       "take_all_units", [](LuaGroup& g, LuaGroup& other) {
         if (g.id >= 0 && other.id >= 0) { ScGroup src(other.id); ScGroup(g.id).TakeAllUnits(&src); } },
@@ -2430,6 +2469,10 @@ void RegisterBindings(sol::state& lua) {
       "self_destruct", [](Unit& u) { if (u.IsLive()) u.DoSelfDestruct(); },
       "kill",          [](Unit& u) { if (u.IsLive()) u.DoDeath(); },                            // die with explosion
       "remove",        [](Unit& u) { if (u.IsLive()) u.DoPoof(); },                             // vanish, no animation
+      // do_death() (since 0.8.19): the game's Unit::DoDeath (0x4769F0 -> 0x43A990) as a mission DLL calls it, without
+      // kill's live check. Renegades q03.dll's exit poofs a unit and then calls DoDeath on it (0x11003E22,
+      // 0x11003E2A); with the poof alone the unit's slot was freed a tick earlier than the DLL's.
+      "do_death",      [](Unit& u) { if (u.IsValid()) u.DoDeath(); },
       // do_transfer(player): the game's own Unit::DoTransfer (0x476AF0), as a stock mission calls it (Eden 4's tanks
       // and Scouts going over): the unit changes hands at once. transfer(player) goes through Tethys's DoTransfer,
       // SEH-guarded.

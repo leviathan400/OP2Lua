@@ -3,6 +3,21 @@
 All notable changes to OP2Lua (the engine: `OP2LuaCore.dll`, the mission stub, the editor and tools).
 For the author-facing SDK, see the OP2LuaSDK changelog.
 
+## [0.8.19] - 2026-11-27
+
+### Added
+
+- `group:remove_unit_guarded(unit)`: `remove_unit` behind a fault guard; false when the game's `RemoveUnit` faulted.
+- `group:walk()`: the group's list as a mission's `GroupEnumerator` walks it (`for u in group:walk() do ... end`),
+  so a script can remove and take units while walking, as a DLL does.
+- `unit:do_death()`: the game's own `Unit::DoDeath` with no live check, as a mission DLL calls it.
+
+### Changed
+
+- OP2LuaEditor (both editors) is 0.8.19 to match the runtime; no change but the version.
+
+Saves made with 0.8.18 load and carry on.
+
 ## [0.8.18] - 2026-11-27
 
 ### Added

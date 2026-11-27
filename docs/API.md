@@ -1,7 +1,7 @@
 # OP2Lua Mission API
 
 The surface a mission author works with in `mission.lua`. Small, shaped like the game, and
-multiplayer-safe by construction (see the note at the bottom). Implemented as of v0.8.18.
+multiplayer-safe by construction (see the note at the bottom). Implemented as of v0.8.19.
 
 ## Coordinates (type what you see in-game)
 
@@ -162,7 +162,7 @@ Prefer `at_mark` / `marks(n)` over the legacy `game.seconds` / `game.minutes`.
 |---|---|
 | `game.create_unit{ type=, player=, at=, count=, weapon=, direction=, lights=, exact= }` | Create units; returns a list of `Unit` (empty for an unknown `type`, with a warning in the log). `at` is any location form. `player` accepts a `Player` or a 1-based number (default `players[1]`). `count` defaults to 1, `direction` to `"East"` (see *Names*), `lights` to on. Each unit goes on a clear tile near `at`, found by the game; `exact = true` places them on `at` itself (several in rows of 4 from `at`), as a mission's setup places its bases (structures beside tubes) - only on tiles known to be free. |
 | `game.message_at(text, sound, player, px, py)` | A message for one player (`nil`: everyone; `sound` as for `game.message`, `false` for none) that points at a spot of the map in pixels, as the stock missions post theirs (CPS2's "Microbe growth detected!"). |
-| `game.version()` | The running OP2LuaCore: its version and when its DLL was built, two strings: `local v, built = game.version()` gives `"0.8.18"`, `"2026-11-17 12:15:06"`. The build time is the DLL's link time (a copy keeps it), the same one the log's first line and OP2LuaEditor's status bar show. |
+| `game.version()` | The running OP2LuaCore: its version and when its DLL was built, two strings: `local v, built = game.version()` gives `"0.8.19"`, `"2026-11-17 12:15:06"`. The build time is the DLL's link time (a copy keeps it), the same one the log's first line and OP2LuaEditor's status bar show. |
 | `game.op2_version()` | The running Outpost 2: the version the game goes by and Outpost2.exe's own file version, two strings (either one nil when it can't be read): `local v, exe = game.op2_version()` gives `"1.4.0.1"`, `"1.2.0.7"` under OPU 1.4.x. The first is the game's `TApp::Version`, the number its multiplayer lobby compares (`1.2.0.7` for the GOG exe alone, `1.3.0.4` retail 1.3.6, `1.4.0.1` OPU 1.4.x); OPU sets it, the file on disk keeps 1.2.0.7. For display only: don't branch game logic on it in multiplayer. |
 | `game.message(text [, sound])` | In-game message (comms panel). `sound` is a name (`"EnemyUnitSighted"`) or raw id; omit for the game's default (Beep8), or `false` for none (e.g. before `game.play_wav`). **Keep `text` short - OP2's comms panel truncates around ~90 chars; put full detail in the log via `print()` instead.** |
 | `game.sound(name_or_id [, toPlayer])` | Play a game sound (e.g. `game.sound("WeAreUnderAttack")`), for everyone or for one player. `toPlayer` is the game's **0-based** player number (`unit.owner`), not a `Player`. |
@@ -334,6 +334,11 @@ Coordinates are author coords, as everywhere; rectangles are `{x1, y1, x2, y2}`.
 **Any group:** `.id`, `.kind` (`"Building"` / `"Fight"` / `"Mining"`, or `"Plain"` for a group the game
 hasn't, e.g. the `default_group()` of a player without one), `.valid`, `:units()`, `:unit_count()`,
 `:first_of_type(type[, weapon])` (nil when there is none), `:take_unit(unit)`, `:remove_unit(unit)`,
+`:remove_unit_guarded(unit)` (`remove_unit` behind a fault guard: false when the game's `RemoveUnit` faulted,
+as it can on a group that lists a unit another group has taken since; since 0.8.19),
+`:walk()` (`for u in group:walk() do ... end`: the group's list as a mission's `GroupEnumerator` walks it, each
+step already at the next node, so removing or taking units while walking changes what comes next as it does
+for a DLL; `:units()` copies the list first; since 0.8.19),
 `:take_all_units(other)` (every unit of `other` moves here),
 `:set_targ_counts(block)` (as many of each unit as the block has),
 `:add_units(block)` (makes the block's units for the group's player, into the group, up to 32),
@@ -491,6 +496,7 @@ shown on each player's own screen.
 | `unit:set_emp(ticks)` | EMP the unit for `ticks`; `-1` for as long as the game can (65,535 ticks), `0` to end it. |
 | `unit:damage(n)` / `unit:heal(n)` | Inflict / repair `n` hit points (`damage` past max kills it). |
 | `unit:kill()` / `unit:self_destruct()` / `unit:remove()` | Die (explosion) / self-destruct / vanish silently. |
+| `unit:do_death()` | The game's own `Unit::DoDeath`, as a mission DLL calls it: no live check, unlike `kill` (a DLL that poofs a unit and then calls `DoDeath` on it). Since 0.8.19. |
 | `unit:transfer(player)` | Give the unit to another player (`Player` or 1-based number). |
 | `unit:set_cargo(type [, amount])` | Set a Cargo Truck's load, e.g. `:set_cargo("RareMetal", 1000)` (`amount` defaults to 1000; an unknown cargo name does nothing). |
 | `unit:set_kit(structure [, topping])` | Load a ConVec's structure kit (then `build` it). |

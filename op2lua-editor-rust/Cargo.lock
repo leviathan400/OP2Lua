@@ -2528,7 +2528,7 @@ dependencies = [
 
 [[package]]
 name = "op2luaeditor"
-version = "0.8.14"
+version = "0.8.18"
 dependencies = [
  "ab_glyph",
  "eframe",

@@ -3,6 +3,52 @@
 All notable changes to OP2Lua (the engine: `OP2LuaCore.dll`, the mission stub, the editor and tools).
 For the author-facing SDK, see the OP2LuaSDK changelog.
 
+## [0.8.18] - 2026-11-27
+
+### Added
+
+- `unit:build_raw{ waypoint = { px, py }, rect = { x1, y1, x2, y2 } }`: a Build order with a mission DLL's own
+  numbers (the waypoint in map pixels, the site in the game's tiles), passed unchanged, so a DLL's own build order
+  can be copied exactly. `unit:deploy` and `unit:build` are unchanged.
+- `unit.group_id`: the group the game has the unit in (its `id`), or nil. Removing a unit from any other group that
+  still lists it faults the game, so a mission can check first.
+
+### Changed
+
+- OP2LuaEditor (both editors) is 0.8.18 to match the runtime; no change but the version.
+
+Saves made with 0.8.17 load and carry on.
+
+## [0.8.17] - 2026-11-26
+
+### Added
+
+- Raw rectangles: an area argument takes `{ x1, y1, x2, y2, raw = true }`, the game's own rectangle, unconverted
+  and not wrapped, as a mission DLL passes one. A rectangle without `raw` is read as before.
+
+Saves made with 0.8.16 load and carry on.
+
+## [0.8.16] - 2026-11-26
+
+### Added
+
+- `game.units_closest` also returns the distance the game's ClosestEnumerator gave each unit, as a second table. A
+  caller taking one value is unchanged.
+- `game.units_at(at)`: the units the game's LocationEnumerator gives on one tile, structures on any tile of their
+  footprint.
+
+Saves made with 0.8.15 load and carry on.
+
+## [0.8.15] - 2026-11-26
+
+### Added
+
+- `game.create_beacon_raw{ at=, type=, ore=, yield=, variant= }`: a beacon made with a mission DLL's own numbers,
+  passed unchanged to the game, so a DLL's beacon table can be copied exactly, values with no name included.
+  `game.create_beacon` is unchanged.
+
+Saves made with 0.8.14 load and carry on.
+
 ## [0.8.14] - 2026-11-26
 
 ### Added

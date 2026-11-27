@@ -146,7 +146,8 @@ Location LocFrom(const sol::object& o) {
   return Location();
 }
 
-// A MapRect (internal coords) from a Region, a Unit's footprint, a {x1,y1,x2,y2} rect, a {x,y} single tile (author
+// A MapRect (internal coords) from a Region, a Unit's footprint, a {x1,y1,x2,y2} rect (or with raw = true the game's
+// own rect, unconverted), a {x,y} single tile (author
 // coords -> GameMap::At, which wraps), or a { x =, y = [, raw = true] } single tile read as LocFrom reads it (what
 // region:center() and find_place() return). Used by area orders (build_wall / doze / salvage) and the rectangle
 // queries (units_in_rect, rand_point, find_emp_missile_target).
@@ -159,6 +160,11 @@ MapRect RectFrom(const sol::object& o) {
       const Location p = LocFrom(o);
       return MapRect(p.x, p.y, p.x, p.y);
     }
+    // { x1, y1, x2, y2, raw = true } (since 0.8.17): the game's own rectangle, unconverted and unwrapped, corners as
+    // given, as a mission DLL passes one to MAP_RECT. Renegades q02.dll's south raid area runs to row 0x5C on a
+    // 64-row map; wrapped below, its corners made a three-row strip at the top and the area found nothing.
+    if (t.size() >= 4 && t.get_or("raw", false))
+      return MapRect(t.get_or(1, 0), t.get_or(2, 0), t.get_or(3, 0), t.get_or(4, 0));
     if (t.size() >= 4) {
       const Location a = GameMap::At(t.get_or(3, 0), t.get_or(4, 0)), b = GameMap::At(t.get_or(1, 0), t.get_or(2, 0));
       return MapRect(std::min(a.x, b.x), std::min(a.y, b.y), std::max(a.x, b.x), std::max(a.y, b.y));
@@ -304,7 +310,7 @@ void Game_Sound(sol::object sound, sol::optional<int> toPlayer) {
 int Game_Rand(int n) { return (n >= 0) ? Game::GetRand(n) : 0; }
 int Game_Tick()      { return Game::Tick(); }
 
-// game.version() -> "0.8.14", "2026-11-17 11:57:19": the running OP2LuaCore's version and when its DLL was built.
+// game.version() -> "0.8.18", "2026-11-17 11:57:19": the running OP2LuaCore's version and when its DLL was built.
 std::tuple<std::string, std::string> Game_Version() { return { OP2LUA_VERSION, ::OP2Lua::Mission::BuildTime() }; }
 
 // game.op2_version() -> the version the running Outpost 2 goes by (TApp::Version: "1.4.0.1" under OPU 1.4.x), and
@@ -431,6 +437,29 @@ Unit Game_CreateBeacon(sol::table opts) {
   const Tethys::OreVariant variant = (v == "High") ? Tethys::OreVariant::High : (v == "Mid") ? Tethys::OreVariant::Mid
                                    : (v == "Low") ? Tethys::OreVariant::Low : Tethys::OreVariant::Random;
   return Game::CreateMine(LocFrom(opts["at"]), mt, yield, variant);
+}
+
+// game.create_beacon_raw{ at=, type=, ore=, yield=, variant= } -> Unit. A beacon made with the numbers a mission DLL
+// gives TethysGame::CreateBeacon, passed unchanged to Outpost2.exe's export (?CreateBeacon@TethysGame@@SIHW4map_id@@
+// HHHHH@Z, 0x478940 in 1.3.6 and 1.4.1, a static __fastcall). It's for copying a DLL's beacon table exactly:
+// game.create_beacon goes through TethysAPI's Game::CreateMine, which turns a variant name into the internal number
+// by the bar count (MineManager::GetVariantNum) and pre-rolls a random yield (GetRand(10)) when the yield is random
+// and the variant isn't; neither is here. A value with no name passes too, e.g. q02.dll's variant 3 (Renegades), which
+// the game keeps as given and draws nothing for, where "Random" (-1) draws Rand(3).
+// type: "MiningBeacon" (default), "MagmaVent" or "Fumarole". ore: 0 common, 1 rare, -1 random (default). yield: the
+// game's bar number, 0 = three bars, 1 = two, 2 = one, -1 random (default). variant: the internal variant number,
+// -1 random (default). The beacon made is returned, as create_beacon does; an empty Unit if the game made none.
+Unit Game_CreateBeaconRaw(sol::table opts) {
+  const std::string type = opts.get_or("type", std::string("MiningBeacon"));
+  const MapID id = (type == "Fumarole") ? MapID::Fumarole : (type == "MagmaVent") ? MapID::MagmaVent
+                                                                                 : MapID::MiningBeacon;
+  const int ore = opts.get_or("ore", -1);
+  const int yield = opts.get_or("yield", -1);
+  const int variant = opts.get_or("variant", -1);
+  const Location at = LocFrom(opts["at"]);
+  using Fn = Tethys::ibool FASTCALL(MapID, int, int, int, int, int);
+  return Tethys::OP2Thunk<0x478940, Fn>(id, at.x, at.y, ore, yield, variant) ?
+    *(_Player::GetInstance(6)->GetBeacons()) : Unit();
 }
 
 // The internal time trigger references "OP2LuaTrigger" - a no-op function the stub DLL exports -
@@ -783,15 +812,31 @@ sol::table Game_UnitsInRange(sol::object at, int range, sol::this_state ts) {
 // game.units_closest(at [, count]) -> the units of every player in the order the game's ClosestEnumerator gives them,
 // nearest `at` first by its own measure (0x47A7B0, 0x47A7F0), ties in its order; at most `count` of them. For a
 // mission that walks the units nearest a spot as a mission DLL does with ClosestEnumerator.
-sol::table Game_UnitsClosest(sol::object at, sol::optional<int> count, sol::this_state ts) {
+// Since 0.8.16 a second table follows, the distance the enumerator gave each unit (the same index): its own measure,
+// about squared pixels. A DLL may stop its walk on it: Renegades' repair AI (q02.dll 0x11006D88) stops once the
+// distance's high word has a bit of 0xFFF8 set (0x80000, about 22 tiles). A caller taking one value is unchanged.
+std::tuple<sol::table, sol::table> Game_UnitsClosest(sol::object at, sol::optional<int> count, sol::this_state ts) {
   sol::state_view L(ts);
   sol::table out = L.create_table();
+  sol::table dist = L.create_table();
   const int most = count.value_or(INT_MAX);
   int i = 0;
   for (const auto& r : Tethys::TethysAPI::ClosestEnumerator(LocFrom(at))) {
     if (i >= most) break;
     out[++i] = r.first;
+    dist[i] = static_cast<lua_Integer>(r.second);
   }
+  return std::make_tuple(out, dist);
+}
+
+// game.units_at(at) -> the units of every player the game's LocationEnumerator (0x47A6D0, 0x47A710) gives on one tile,
+// in its order (since 0.8.16). It finds a structure on any tile of its footprint, not only on the structure's own tile:
+// Renegades' dock test (q02.dll 0x11006D07) asks whether the first unit beside a ConVec is a Structure Factory.
+sol::table Game_UnitsAt(sol::object at, sol::this_state ts) {
+  sol::state_view L(ts);
+  sol::table out = L.create_table();
+  int i = 1;
+  for (Unit u : Tethys::TethysAPI::LocationEnumerator(LocFrom(at))) out[i++] = u;
   return out;
 }
 
@@ -1305,6 +1350,28 @@ static void LaunchAtPixel(Unit u, int px, int py) {
   if (owner) owner->ProcessCommandPacket(packet);
 }
 static bool GuardedLaunchAtPixel(Unit u, int px, int py) { __try { LaunchAtPixel(u, px, py); return true; } __except (1) { return false; } }
+// A Build command packet (CommandType::Build) with a mission DLL's own numbers (since 0.8.18): the waypoint in map
+// pixels and the site rectangle in the game's tiles, both as given, as Renegades' OP2EXTRA.DLL IUnit::Build
+// (0x1000112F) sends them. Tethys's DoDeploy sends its own: the waypoint at the tile's top-left corner and the site
+// (x-1, y)-(x, y); IUnit::Build sends a Robo-Miner the middle of the tile's top edge and (x-1, y-1)-(x, y), a row
+// more. The site's terrain counts in the build time: Renegades q03.dll's mine took 667 ticks, the remake's 800.
+static void BuildRaw(Unit u, int px, int py, int x1, int y1, int x2, int y2) {
+  Tethys::CommandPacket packet = { Tethys::CommandType::Build, sizeof(Tethys::BuildCommand) };
+  packet.data.build.numUnits     = 1;
+  packet.data.build.unitID[0]    = static_cast<uint16_t>(u.GetID());
+  packet.data.build.numWaypoints = 1;
+  Tethys::Waypoint w = {};
+  w.x = static_cast<uint32_t>(px);
+  w.y = static_cast<uint32_t>(py);
+  packet.data.build.waypoint[0]  = w;
+  packet.data.build.rect         = MapRect(x1, y1, x2, y2).AsPacked();
+  packet.data.build.unknown      = -1;
+  auto*const owner = Tethys::GameImpl::GetInstance()->GetPlayer(u.GetOwner());
+  if (owner) owner->ProcessCommandPacket(packet);
+}
+static bool GuardedBuildRaw(Unit u, int px, int py, int x1, int y1, int x2, int y2) {
+  __try { BuildRaw(u, px, py, x1, y1, x2, y2); return true; } __except (1) { return false; }
+}
 // Unit::DoLaunch(px, py, force) as Outpost2.exe exports it (?DoLaunch@Unit@@QAEXHHH@Z, 0x476580), the call Plymouth 12's
 // SpidersPresent makes with force 1 (p12.dll 0x11002C99) to launch the captured RLV from an EMPed Spaceport. The
 // command packet LaunchAtPixel sends is refused while the Spaceport is EMPed.
@@ -1930,6 +1997,7 @@ void RegisterBindings(sol::state& lua) {
   game.set_function("create_wreckage", [](sol::object at, int techId, sol::optional<bool> discovered) {
     return Game::CreateWreckage(LocFrom(at), techId, discovered.value_or(false)); });  // techId 8000-12095
   game.set_function("create_beacon", &Game_CreateBeacon);   // a mining beacon / vent / fumarole at runtime
+  game.set_function("create_beacon_raw", &Game_CreateBeaconRaw);   // the same with a mission DLL's raw numbers
 
   // ---- disasters (the trailing `now` forces it to trigger immediately instead of after a warning) ----
   game.set_function("create_meteor", [](sol::object at, sol::optional<int> size, sol::optional<bool> now) {
@@ -1970,6 +2038,7 @@ void RegisterBindings(sol::state& lua) {
   game.set_function("units_in_range", &Game_UnitsInRange);
   game.set_function("units_in_rect",  &Game_UnitsInRect);
   game.set_function("units_closest",  &Game_UnitsClosest);
+  game.set_function("units_at",       &Game_UnitsAt);
   // game.force_robot_command(on) - every player's robot units work without a Robot Command Center (the game's
   // forceEnableRCC flag, game state +0x3C), for a mission that takes the RCC away.
   game.set_function("force_robot_command", [](bool on) { Tethys::GameImpl::GetInstance()->forceEnableRCC_ = on; });
@@ -2149,6 +2218,15 @@ void RegisterBindings(sol::state& lua) {
       "alive",       sol::property([](const Unit& u) { return u.IsLive(); }),
       "owner",       sol::property([](const Unit& u) { return u.GetOwner(); }),
       "valid",       sol::property([](const Unit& u) { return u.IsValid(); }),
+      // unit.group_id (since 0.8.18): the ScGroup the game has the unit in (MapObject::scGroupIndex_), as a group's
+      // `id`, or nil for none. ScGroup::RemoveUnit works on that group's list through the unit's own node, so removing
+      // a unit from another group that still lists it (TakeUnit doesn't delist it from the old one) faults the game
+      // (0x0042BDCA): a mission can check this first.
+      "group_id",    sol::property([](const Unit& u, sol::this_state ts) -> sol::object {
+                        sol::state_view L(ts);
+                        if (!u.IsValid()) return sol::make_object(L, sol::lua_nil);
+                        const int g = u.GetMapObject()->scGroupIndex_;
+                        return g == 0xFF ? sol::make_object(L, sol::lua_nil) : sol::make_object(L, g); }),
       "move",        [](Unit& u, sol::object loc) { const Location p = LocFrom(loc);
                                                     Order({ u, OrderKind::Move, p.x, p.y, Unit() }); },
       // attack_move(target): if given a unit, hunt and attack it; if given a location, advance there
@@ -2189,6 +2267,15 @@ void RegisterBindings(sol::state& lua) {
       // convec:build(loc) - ConVec builds the structure kit it is carrying, anchored at loc.
       "build",        [](Unit& u, sol::object loc) { if (u.IsLive() && !GuardedBuild(u, LocFrom(loc)))
                         LOG_MISSION(WARNING) << "build: command faulted"; },
+      // unit:build_raw{ waypoint = { px, py }, rect = { x1, y1, x2, y2 } } (since 0.8.18) - a Build order with a mission
+      // DLL's own numbers, unconverted: the waypoint in map pixels, the site in the game's tiles (see BuildRaw). For a
+      // ConVec, a Robo-Miner or a GeoCon; the game checks the rest, as for the DLL's order.
+      "build_raw",    [](Unit& u, sol::table t) { if (!u.IsLive()) return;
+                        sol::table w = t["waypoint"], r = t["rect"];
+                        if (!w.valid() || !r.valid()) { LOG_MISSION(WARNING) << "build_raw: needs waypoint and rect"; return; }
+                        if (!GuardedBuildRaw(u, w.get_or(1, 0), w.get_or(2, 0), r.get_or(1, 0), r.get_or(2, 0),
+                                             r.get_or(3, 0), r.get_or(4, 0)))
+                          LOG_MISSION(WARNING) << "build_raw: command faulted"; },
       // truck:mining_route(mine, smelter) - run a Cargo Truck on a mine<->smelter ore route.
       "mining_route", [](Unit& u, Unit mine, Unit smelter) { if (u.IsLive() && mine.IsValid() && smelter.IsValid())
                         GuardedMiningRoute(u, mine, smelter); },

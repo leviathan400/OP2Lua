@@ -1,7 +1,7 @@
 # OP2Lua Mission API
 
 The surface a mission author works with in `mission.lua`. Small, shaped like the game, and
-multiplayer-safe by construction (see the note at the bottom). Implemented as of v0.8.14.
+multiplayer-safe by construction (see the note at the bottom). Implemented as of v0.8.18.
 
 ## Coordinates (type what you see in-game)
 
@@ -24,6 +24,9 @@ Wherever a call takes a location, it also takes a `Unit` (its tile) or a `Region
 argument (`build_wall`, `doze`, `units_in_rect`, `rand_point`, a group's `set_rect`, ...) takes a rectangle, a
 point in any of the forms above (one tile), a `Region`, or a `Unit` (the tiles it covers); there, a
 `{x1, y1, x2, y2}` rectangle or an `{x, y}` point is wrapped onto the map like the game's own coordinates.
+A rectangle may also be the game's own, unconverted and not wrapped: `{ x1, y1, x2, y2, raw = true }`, its
+corners as given, as a mission DLL passes one to `MAP_RECT` (one that runs past the map's edge finds what the
+game finds there, where the wrapped corners would make another rectangle). Since 0.8.17.
 
 What the API gives back is in the same coordinates, so it goes straight back in: `unit.x`/`unit.y`,
 `markers[...]`, `region:center()`, `game.find_place`. `game.find_emp_missile_target` is the one exception (a
@@ -159,7 +162,7 @@ Prefer `at_mark` / `marks(n)` over the legacy `game.seconds` / `game.minutes`.
 |---|---|
 | `game.create_unit{ type=, player=, at=, count=, weapon=, direction=, lights=, exact= }` | Create units; returns a list of `Unit` (empty for an unknown `type`, with a warning in the log). `at` is any location form. `player` accepts a `Player` or a 1-based number (default `players[1]`). `count` defaults to 1, `direction` to `"East"` (see *Names*), `lights` to on. Each unit goes on a clear tile near `at`, found by the game; `exact = true` places them on `at` itself (several in rows of 4 from `at`), as a mission's setup places its bases (structures beside tubes) - only on tiles known to be free. |
 | `game.message_at(text, sound, player, px, py)` | A message for one player (`nil`: everyone; `sound` as for `game.message`, `false` for none) that points at a spot of the map in pixels, as the stock missions post theirs (CPS2's "Microbe growth detected!"). |
-| `game.version()` | The running OP2LuaCore: its version and when its DLL was built, two strings: `local v, built = game.version()` gives `"0.8.14"`, `"2026-11-17 12:15:06"`. The build time is the DLL's link time (a copy keeps it), the same one the log's first line and OP2LuaEditor's status bar show. |
+| `game.version()` | The running OP2LuaCore: its version and when its DLL was built, two strings: `local v, built = game.version()` gives `"0.8.18"`, `"2026-11-17 12:15:06"`. The build time is the DLL's link time (a copy keeps it), the same one the log's first line and OP2LuaEditor's status bar show. |
 | `game.op2_version()` | The running Outpost 2: the version the game goes by and Outpost2.exe's own file version, two strings (either one nil when it can't be read): `local v, exe = game.op2_version()` gives `"1.4.0.1"`, `"1.2.0.7"` under OPU 1.4.x. The first is the game's `TApp::Version`, the number its multiplayer lobby compares (`1.2.0.7` for the GOG exe alone, `1.3.0.4` retail 1.3.6, `1.4.0.1` OPU 1.4.x); OPU sets it, the file on disk keeps 1.2.0.7. For display only: don't branch game logic on it in multiplayer. |
 | `game.message(text [, sound])` | In-game message (comms panel). `sound` is a name (`"EnemyUnitSighted"`) or raw id; omit for the game's default (Beep8), or `false` for none (e.g. before `game.play_wav`). **Keep `text` short - OP2's comms panel truncates around ~90 chars; put full detail in the log via `print()` instead.** |
 | `game.sound(name_or_id [, toPlayer])` | Play a game sound (e.g. `game.sound("WeAreUnderAttack")`), for everyone or for one player. `toPlayer` is the game's **0-based** player number (`unit.owner`), not a `Player`. |
@@ -206,7 +209,8 @@ passed as a raw integer SoundID. An unknown name plays sound 0.
 | `game.create_wall(type, area)` / `game.create_tube(area)` | Build walls (`"Wall"`/`"LavaWall"`/`"MicrobeWall"`, or `"Tube"`) or tubes over an area. |
 | `game.create_marker(at [, type])` | A map decal (`"Circle"` default, `"DNA"`, `"Beaker"`; any other name is a Circle); returns a `Unit`. |
 | `game.create_wreckage(at, techId [, discovered])` | Wreckage that grants a tech when returned to a Spaceport (techId 8000-12095). `discovered` defaults to false. |
-| `game.create_beacon{ at=, type=, ore=, yield=, variant= }` | A mining beacon (or `"MagmaVent"` / `"Fumarole"`) made at runtime, with placement's names (`ore` Common/Rare/Random, `yield` Bar3/Bar2/Bar1/Random, `variant` High/Mid/Low/Random). For beacons a mission decides when it starts, e.g. a yield rolled with `game.rand`; fixed ones belong in placement. |
+| `game.create_beacon{ at=, type=, ore=, yield=, variant= }` | A mining beacon (or `"MagmaVent"` / `"Fumarole"`) made at runtime, with placement's names (`ore` Common/Rare/Random, `yield` Bar3/Bar2/Bar1/Random, `variant` High/Mid/Low/Random). For beacons a mission decides when it starts, e.g. a yield rolled with `game.rand`; fixed ones belong in placement. To copy a mission DLL's beacon table exactly, use `create_beacon_raw`. |
+| `game.create_beacon_raw{ at=, type=, ore=, yield=, variant= }` | The same with a mission DLL's own numbers, passed unchanged to the game's `TethysGame::CreateBeacon` (0x478940): `ore` 0 common, 1 rare; `yield` 0 three bars, 1 two, 2 one; `variant` the internal variant number; -1 random (each defaults to -1). `type` as above. No name lookup and no yield pre-roll, so the game makes exactly the random draws the DLL's call makes, and numbers with no name pass too (Renegades q02.dll's variant 3, which the game keeps and draws nothing for). Returns the beacon. Since 0.8.15. |
 
 **Disasters & environment** (each `create_*` but `create_blight` returns the disaster `Unit`; `now = true` triggers it immediately rather than after a warning. The arguments are positional, so `now` comes after every argument before it: `game.create_meteor(at, -1, true)`.)
 
@@ -222,7 +226,8 @@ passed as a raw integer SoundID. An unknown name plays sound 0.
 | `game.set_lava_possible(area [, on])` | Mark tiles as lava-passable so an eruption's flow can reach them (carve a channel). `on` defaults to true. |
 | `game.tile(at)` / `game.set_tile(at, index)` | A tile's graphic, as its index in the map's tile mappings (what a map editor shows). The stock lava maps swap in volcano tiles before an eruption. |
 | `game.units_in_range(at, range)` | The units within `range` tiles of `at`, as the game's `InRangeEnumerator` finds them. |
-| `game.units_closest(at [, count])` | The units of every player in the order the game's `ClosestEnumerator` gives them: nearest `at` first by the game's own measure (not a plain distance sort), at most `count` of them (default all). For walking the units nearest a spot as a mission DLL does. |
+| `game.units_closest(at [, count])` | The units of every player in the order the game's `ClosestEnumerator` gives them: nearest `at` first by the game's own measure (not a plain distance sort), at most `count` of them (default all). For walking the units nearest a spot as a mission DLL does. Since 0.8.16 a second table follows: the distance the enumerator gave each unit (same index, its own measure, about squared pixels), for a DLL that stops its walk on it (`local units, dists = game.units_closest(at)`); a caller taking one value is unchanged. |
+| `game.units_at(at)` | The units of every player the game's `LocationEnumerator` gives on one tile, in its order. A structure is found on any tile of its footprint, not only its own tile. Since 0.8.16. |
 | `game.units_in_rect(area)` | The units of every player in the area (a rectangle `{x1, y1, x2, y2}`, a point, a `Region`), as the game's `InRectEnumerator` finds them. |
 | `game.set_music(songs [, repeat_from])` | The music playlist: the game's song numbers in order, and the position (1-based) it starts again from once played through (`TethysGame::SetMusicPlayList`). Set it again in `on_load_save()` (*Saved games*). |
 | `game.player(n)` | The `Player` of slot `n` (1-7), whether or not the lobby has it: a mission's own computer player beyond the lobby's (the game's player 6, say) is `game.player(7)`. |
@@ -448,6 +453,7 @@ shown on each player's own screen.
 | `unit.type` / `unit.type_id` | Type name (e.g. `"Tiger"`; see *Names*) / raw `MapID` integer. |
 | `unit.alive` / `unit.valid` | Liveness. |
 | `unit.owner` | Owner player, **0-based** (the game's own number): `players[unit.owner + 1]` is its `Player`. |
+| `unit.group_id` | The group the game has the unit in, as that group's `id`, or nil for none. `TakeUnit` doesn't delist a unit from its old group, and removing it from a group that lists it but isn't this one faults the game: check this before `group:remove_unit`. Since 0.8.18. |
 | `unit.x` / `unit.y` | Tile position in author / status-bar coords (round-trips: feed `{x,y}` back to move/build). |
 | `unit.ore` | A mining beacon's ore type (`"Common"`/`"Rare"`); `""` otherwise. |
 | `unit.hp` / `unit.max_hp` / `unit.health` | Hit points now / max / fraction `0..1`. |
@@ -501,6 +507,7 @@ shown on each player's own screen.
 | `beacon:surveyed_by(player)` | Whether a mining beacon counts as surveyed for `player` (a `Player` or a 1-based number): the player or an ally surveyed it, or the player has an EDWARD Satellite. False for any other unit. |
 | `unit:deploy(beacon\|loc)` | RoboMiner / GeoCon: deploy into a building (a mine on a beacon). |
 | `unit:build(loc)` | ConVec: build the structure kit it's carrying at `loc`. |
+| `unit:build_raw{ waypoint = { px, py }, rect = { x1, y1, x2, y2 } }` | ConVec, RoboMiner or GeoCon: a Build order with a mission DLL's own numbers, unconverted: the waypoint in map pixels, the site in the game's tiles, as the DLL's own code sends it. The site's terrain counts in the build time, so a copied order builds as fast as the DLL's. Since 0.8.18. |
 | `unit:dock(structure)` / `unit:dock_at_garage(garage)` | Dock a vehicle (e.g. ConVec at a factory to load a kit). |
 | `unit:put_in_garage(bay, at)` | Park a vehicle at once in bay 1-6 of the Garage whose dock tile is `at` (the game's `Unit::PutInGarage`, as a mission's setup parks one). |
 | `structure:unit_on_dock()` | The vehicle currently on a structure's dock, or nil (use to know a ConVec has finished docking). |

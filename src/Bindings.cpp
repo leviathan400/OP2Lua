@@ -449,6 +449,19 @@ Unit Game_CreateBeacon(sol::table opts) {
 // type: "MiningBeacon" (default), "MagmaVent" or "Fumarole". ore: 0 common, 1 rare, -1 random (default). yield: the
 // game's bar number, 0 = three bars, 1 = two, 2 = one, -1 random (default). variant: the internal variant number,
 // -1 random (default). The beacon made is returned, as create_beacon does; an empty Unit if the game made none.
+// game.create_wreckage_raw(at, techId [, discovered]) (0.8.20): wreckage made with a mission DLL's own numbers, passed
+// unchanged to Outpost2.exe's exported TethysGame::CreateWreck (?CreateWreck@TethysGame@@SIHHHW4map_id@@H@Z, 0x4789F0
+// in 1.3.6 and 1.4.1, a static __fastcall). game.create_wreckage goes through TethysAPI's Game::CreateWreckage, which
+// makes nothing unless techId is 8000-12095; a DLL calls the game with any number, e.g. Renegades q04.dll's unit
+// parts with tech 0, and the game makes that wreck (it takes a unit id, as any wreck does). Returns the wreckage, as
+// create_wreckage does; an empty Unit if the game made none.
+Unit Game_CreateWreckageRaw(sol::object at, int techId, sol::optional<bool> discovered) {
+  const Location loc = LocFrom(at);
+  using Fn = Tethys::ibool FASTCALL(int, int, int, Tethys::ibool);
+  return Tethys::OP2Thunk<0x4789F0, Fn>(loc.x, loc.y, techId, discovered.value_or(false) ? 1 : 0) ?
+    *(_Player::GetInstance(6)->GetBeacons()) : Unit();
+}
+
 Unit Game_CreateBeaconRaw(sol::table opts) {
   const std::string type = opts.get_or("type", std::string("MiningBeacon"));
   const MapID id = (type == "Fumarole") ? MapID::Fumarole : (type == "MagmaVent") ? MapID::MagmaVent
@@ -2035,6 +2048,7 @@ void RegisterBindings(sol::state& lua) {
     return Game::CreateMarker(LocFrom(at), mt); });
   game.set_function("create_wreckage", [](sol::object at, int techId, sol::optional<bool> discovered) {
     return Game::CreateWreckage(LocFrom(at), techId, discovered.value_or(false)); });  // techId 8000-12095
+  game.set_function("create_wreckage_raw", &Game_CreateWreckageRaw);   // the same with a mission DLL's raw numbers
   game.set_function("create_beacon", &Game_CreateBeacon);   // a mining beacon / vent / fumarole at runtime
   game.set_function("create_beacon_raw", &Game_CreateBeaconRaw);   // the same with a mission DLL's raw numbers
 

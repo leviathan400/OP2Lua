@@ -1,7 +1,7 @@
 # OP2Lua Mission API
 
 The surface a mission author works with in `mission.lua`. Small, shaped like the game, and
-multiplayer-safe by construction (see the note at the bottom). Implemented as of v0.8.19.
+multiplayer-safe by construction (see the note at the bottom). Implemented as of v0.8.20.
 
 ## Coordinates (type what you see in-game)
 
@@ -162,7 +162,7 @@ Prefer `at_mark` / `marks(n)` over the legacy `game.seconds` / `game.minutes`.
 |---|---|
 | `game.create_unit{ type=, player=, at=, count=, weapon=, direction=, lights=, exact= }` | Create units; returns a list of `Unit` (empty for an unknown `type`, with a warning in the log). `at` is any location form. `player` accepts a `Player` or a 1-based number (default `players[1]`). `count` defaults to 1, `direction` to `"East"` (see *Names*), `lights` to on. Each unit goes on a clear tile near `at`, found by the game; `exact = true` places them on `at` itself (several in rows of 4 from `at`), as a mission's setup places its bases (structures beside tubes) - only on tiles known to be free. |
 | `game.message_at(text, sound, player, px, py)` | A message for one player (`nil`: everyone; `sound` as for `game.message`, `false` for none) that points at a spot of the map in pixels, as the stock missions post theirs (CPS2's "Microbe growth detected!"). |
-| `game.version()` | The running OP2LuaCore: its version and when its DLL was built, two strings: `local v, built = game.version()` gives `"0.8.19"`, `"2026-11-17 12:15:06"`. The build time is the DLL's link time (a copy keeps it), the same one the log's first line and OP2LuaEditor's status bar show. |
+| `game.version()` | The running OP2LuaCore: its version and when its DLL was built, two strings: `local v, built = game.version()` gives `"0.8.20"`, `"2026-11-17 12:15:06"`. The build time is the DLL's link time (a copy keeps it), the same one the log's first line and OP2LuaEditor's status bar show. |
 | `game.op2_version()` | The running Outpost 2: the version the game goes by and Outpost2.exe's own file version, two strings (either one nil when it can't be read): `local v, exe = game.op2_version()` gives `"1.4.0.1"`, `"1.2.0.7"` under OPU 1.4.x. The first is the game's `TApp::Version`, the number its multiplayer lobby compares (`1.2.0.7` for the GOG exe alone, `1.3.0.4` retail 1.3.6, `1.4.0.1` OPU 1.4.x); OPU sets it, the file on disk keeps 1.2.0.7. For display only: don't branch game logic on it in multiplayer. |
 | `game.message(text [, sound])` | In-game message (comms panel). `sound` is a name (`"EnemyUnitSighted"`) or raw id; omit for the game's default (Beep8), or `false` for none (e.g. before `game.play_wav`). **Keep `text` short - OP2's comms panel truncates around ~90 chars; put full detail in the log via `print()` instead.** |
 | `game.sound(name_or_id [, toPlayer])` | Play a game sound (e.g. `game.sound("WeAreUnderAttack")`), for everyone or for one player. `toPlayer` is the game's **0-based** player number (`unit.owner`), not a `Player`. |
@@ -209,6 +209,7 @@ passed as a raw integer SoundID. An unknown name plays sound 0.
 | `game.create_wall(type, area)` / `game.create_tube(area)` | Build walls (`"Wall"`/`"LavaWall"`/`"MicrobeWall"`, or `"Tube"`) or tubes over an area. |
 | `game.create_marker(at [, type])` | A map decal (`"Circle"` default, `"DNA"`, `"Beaker"`; any other name is a Circle); returns a `Unit`. |
 | `game.create_wreckage(at, techId [, discovered])` | Wreckage that grants a tech when returned to a Spaceport (techId 8000-12095). `discovered` defaults to false. |
+| `game.create_wreckage_raw(at, techId [, discovered])` | The same with a mission DLL's own number, passed unchanged to the game's `TethysGame::CreateWreck` (0x4789F0): any `techId`, e.g. 0 for wreckage that grants nothing (Renegades q04.dll's unit parts), where `create_wreckage` makes nothing outside 8000-12095. Returns the wreckage. Since 0.8.20. |
 | `game.create_beacon{ at=, type=, ore=, yield=, variant= }` | A mining beacon (or `"MagmaVent"` / `"Fumarole"`) made at runtime, with placement's names (`ore` Common/Rare/Random, `yield` Bar3/Bar2/Bar1/Random, `variant` High/Mid/Low/Random). For beacons a mission decides when it starts, e.g. a yield rolled with `game.rand`; fixed ones belong in placement. To copy a mission DLL's beacon table exactly, use `create_beacon_raw`. |
 | `game.create_beacon_raw{ at=, type=, ore=, yield=, variant= }` | The same with a mission DLL's own numbers, passed unchanged to the game's `TethysGame::CreateBeacon` (0x478940): `ore` 0 common, 1 rare; `yield` 0 three bars, 1 two, 2 one; `variant` the internal variant number; -1 random (each defaults to -1). `type` as above. No name lookup and no yield pre-roll, so the game makes exactly the random draws the DLL's call makes, and numbers with no name pass too (Renegades q02.dll's variant 3, which the game keeps and draws nothing for). Returns the beacon. Since 0.8.15. |
 

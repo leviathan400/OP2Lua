@@ -3,6 +3,19 @@
 All notable changes to OP2Lua (the engine: `OP2LuaCore.dll`, the mission stub, the editor and tools).
 For the author-facing SDK, see the OP2LuaSDK changelog.
 
+## [0.8.20] - 2026-11-27
+
+### Added
+
+- `game.create_wreckage_raw(at, techId [, discovered])`: wreckage with any tech number, made as a mission DLL makes
+  it; `create_wreckage` makes none outside 8000-12095.
+
+### Changed
+
+- OP2LuaEditor (both editors) is 0.8.20 to match the runtime; no change but the version.
+
+Saves made with 0.8.19 load and carry on.
+
 ## [0.8.19] - 2026-11-27
 
 ### Added
